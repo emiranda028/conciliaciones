@@ -41,6 +41,14 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
 
 Por defecto va de las 06:00 del día elegido a las 06:00 del día siguiente, y la hora de inicio se puede cambiar. Se concilian todos los movimientos cargados, así una partida que cruza las 06:00 igual encuentra su par, y después se muestran solo las del día elegido.
 
+## Descargar el ejecutable
+
+Última versión: **https://github.com/emiranda028/conciliaciones/releases/latest/download/ConciliadorFichas.exe**
+
+Cada cambio que se sube a `main` genera el `.exe` en una máquina Windows de GitHub, lo prueba (abre la
+app, concilia datos de ejemplo y verifica que la red esté bloqueada) y lo publica en
+[Releases](https://github.com/emiranda028/conciliaciones/releases). Si el build falla, no se publica.
+
 ## Uso
 
 1. Copiar `ConciliadorFichas.exe` al pendrive y abrirlo con doble clic.
@@ -70,6 +78,7 @@ npm install
 npm test                 # pruebas del motor con datos sintéticos
 npm start                # build sin ofuscar + app con DevTools
 npm run dist             # build ofuscado + dist/ConciliadorFichas.exe (Windows x64 portable)
+node scripts/smoke-electron.mjs "dist/win-unpacked/Conciliador de Fichas.exe"   # prueba de la app (requiere playwright)
 ```
 
 Estructura:

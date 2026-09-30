@@ -1,0 +1,57 @@
+name: Ejecutable Windows
+
+# Genera ConciliadorFichas.exe en una máquina Windows, lo prueba y (en main) lo publica
+# como Release. Link fijo a la última versión:
+#   https://github.com/<dueño>/<repo>/releases/latest/download/ConciliadorFichas.exe
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Pruebas del motor
+        run: npm test
+
+      - name: Generar ejecutable
+        run: npm run dist
+
+      - name: Prueba de la app empaquetada
+        run: |
+          npm install --no-save playwright@1.56.1
+          node scripts/smoke-electron.mjs "dist/win-unpacked/Conciliador de Fichas.exe"
+
+      - name: Guardar ejecutable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConciliadorFichas
+          path: dist/ConciliadorFichas.exe
+          retention-days: 30
+
+      - name: Publicar Release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}-build${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" dist/ConciliadorFichas.exe \
+            --title "Conciliador de Fichas ${version} (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Ejecutable portable para Windows x64. No requiere instalación: copiarlo al pendrive y abrirlo con doble clic. Generado desde ${GITHUB_SHA::7}." \
+            --latest
