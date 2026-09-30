@@ -1,0 +1,54 @@
+{
+  "name": "conciliador-fichas",
+  "productName": "Conciliador de Fichas",
+  "version": "1.0.0",
+  "description": "Conciliación offline de paneles de fichas contra billeteras",
+  "private": true,
+  "type": "module",
+  "main": "build/main.cjs",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/build.mjs --dev && electron .",
+    "dist": "node scripts/build.mjs && electron-builder --win portable --x64"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "javascript-obfuscator": "^5.8.0",
+    "exceljs": "^4.4.0"
+  },
+  "build": {
+    "appId": "ar.conciliador.fichas",
+    "productName": "Conciliador de Fichas",
+    "copyright": "Uso exclusivo del cliente",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "build/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "ConciliadorFichas.exe"
+    },
+    "extraMetadata": {
+      "main": "build/main.cjs"
+    }
+  }
+}

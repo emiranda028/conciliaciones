@@ -1,0 +1,9 @@
+node_modules/
+build/
+dist/
+*.log
+# Nunca subir reportes reales de clientes
+datos/
+*.xlsx
+*.csv
+!test/fixtures/*.csv
