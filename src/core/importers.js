@@ -445,7 +445,84 @@ const mpRetiros = {
   },
 };
 
-export const IMPORTERS = [bets, ganemos, zeus, cash, mercadoPago, mpRetiros, panelPlano];
+// ---------------------------------------------------------------------------
+// GANEMOS en tabla (hoja "Consolidado"): ID | FECHA | OPERACIÓN | INICIADOR | DE | A | monto
+const ganemosTablaKeys = { fecha: 'fecha', op: 'operacion', iniciador: 'iniciador', de: 'de', a: 'a', monto: 'monto', '?id': 'id' };
+
+const ganemosTabla = {
+  key: 'GANEMOS_TABLA',
+  label: 'Panel GANEMOS (tabla ID / FECHA / OPERACIÓN / INICIADOR / DE / A)',
+  lado: LADO.PANEL,
+  detect(rows) {
+    const h = findHeader(rows, ganemosTablaKeys);
+    return h && h.cols.de >= 0 && h.cells[h.cols.de] === 'de' && h.cells[h.cols.a] === 'a' ? 97 : 0;
+  },
+  parse(rows) {
+    const h = findHeader(rows, ganemosTablaKeys);
+    const out = [];
+    let skipped = 0;
+    for (const row of rows.slice(h.row + 1)) {
+      const op = cleanText(get(row, h.cols.op));
+      const ts = parseDateTime(get(row, h.cols.fecha));
+      const monto = parseNumber(get(row, h.cols.monto));
+      if (!OP_GANEMOS.test(op) || ts == null || !monto) {
+        if (op || monto) skipped += 1;
+        continue;
+      }
+      const iniciador = cleanText(get(row, h.cols.iniciador));
+      const de = cleanText(get(row, h.cols.de));
+      const a = cleanText(get(row, h.cols.a));
+      const opn = norm(op);
+      const tipo = opn.startsWith('retiro') ? 'PAGO' : opn.startsWith('bon') ? 'BONO' : 'COBRO';
+      const persona = a && norm(a) !== norm(iniciador) ? a : de && norm(de) !== norm(iniciador) ? de : a;
+      out.push(mk({ lado: LADO.PANEL, origen: 'GANEMOS', cuenta: iniciador, persona, ts, tipo, monto, ref: cleanText(get(row, h.cols.id)), detalle: op }));
+    }
+    return { records: out, skipped };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Movimientos leídos de capturas de pantalla (ver capturas.js). Solo traen el día, no la hora:
+// se ubican al mediodía y se marcan sinHora para que el cruce use el día completo.
+const capturas = {
+  key: 'CAPTURAS',
+  label: 'Billetera: capturas de pantalla (OCR)',
+  lado: LADO.BILLETERA,
+  detect(rows) {
+    return rows[0] && rows[0].some((c) => norm(c) === 'origencapturadepantalla') ? 100 : 0;
+  },
+  parse(rows) {
+    const out = [];
+    let skipped = 0;
+    for (const row of rows.slice(1)) {
+      const [fecha, titular, op, monto, cuenta, imagen] = row;
+      const day = parseDateTime(fecha);
+      const m = parseNumber(monto);
+      if (day == null || !m) {
+        skipped += 1;
+        continue;
+      }
+      const nombre = cleanText(titular);
+      out.push(
+        mk({
+          lado: LADO.BILLETERA,
+          origen: 'CAPTURA',
+          cuenta: cleanText(cuenta),
+          persona: nombre.replace(/(\.\.\.|…)$/, '').trim(),
+          ts: day - (((day % 86400000) + 86400000) % 86400000) + 12 * 3600000,
+          sinHora: true,
+          truncado: /(\.\.\.|…)$/.test(nombre),
+          tipo: norm(op).startsWith('cobro') ? 'COBRO' : 'PAGO',
+          monto: m,
+          detalle: cleanText(imagen),
+        })
+      );
+    }
+    return { records: out, skipped };
+  },
+};
+
+export const IMPORTERS = [bets, ganemos, ganemosTabla, zeus, cash, mercadoPago, mpRetiros, capturas, panelPlano];
 
 export function importerByKey(key) {
   return IMPORTERS.find((i) => i.key === key) || null;

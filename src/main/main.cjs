@@ -82,6 +82,46 @@ ipcMain.handle('config:save', (_e, data) => {
 
 ipcMain.handle('config:dir', () => dataDir());
 
+// OCR de capturas de pantalla (Tesseract, español), todo local: el idioma viaja con la app.
+// Las librerías van fuera del asar (asarUnpack) para que el worker thread pueda cargarlas.
+let ocrWorker = null;
+const unpacked = (p) => p.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+
+async function getOcr() {
+  if (ocrWorker) return ocrWorker;
+  const { createWorker } = require('tesseract.js');
+  const tjsDir = unpacked(path.dirname(require.resolve('tesseract.js/package.json')));
+  const langPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'tessdata')
+    : path.join(path.dirname(require.resolve('@tesseract.js-data/spa/package.json')), '4.0.0_best_int');
+  ocrWorker = await createWorker('spa', 1, {
+    langPath,
+    cacheMethod: 'none',
+    gzip: true,
+    workerPath: path.join(tjsDir, 'src', 'worker-script', 'node', 'index.js'),
+  });
+  return ocrWorker;
+}
+
+ipcMain.handle('ocr:leer', async (_e, data) => {
+  const w = await getOcr();
+  const { data: d } = await w.recognize(Buffer.from(data), {}, { blocks: true });
+  return (d.blocks || []).flatMap((b) =>
+    b.paragraphs.flatMap((p) =>
+      p.lines.map((l) => ({
+        text: l.text,
+        confidence: l.confidence,
+        bbox: l.bbox,
+        words: l.words.map((x) => ({ text: x.text, bbox: x.bbox, confidence: x.confidence })),
+      }))
+    )
+  );
+});
+
+app.on('before-quit', () => {
+  if (ocrWorker) ocrWorker.terminate().catch(() => {});
+});
+
 ipcMain.handle('file:save', async (e, { defaultName, data, filters }) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters });

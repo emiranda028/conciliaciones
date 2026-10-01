@@ -15,11 +15,13 @@ import {
   diccionarioDesdeTabla,
   serializarTrabajo,
   deserializarTrabajo,
+  tableToFuente,
 } from '../core/session.js';
+import { parsearCaptura, unirCapturas, filasATabla } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { exportarExcel, TRAMOS, turnoDe } from '../core/report.js';
 import { ESTADOS, DEFAULT_PARAMS } from '../core/matcher.js';
-import { fmtDate, fmtTime, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay } from '../core/util.js';
+import { fmtDate, fmtTime, horaDe, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay, parseNumber } from '../core/util.js';
 import ExcelJS from 'exceljs';
 
 // ---------------------------------------------------------------------------
@@ -103,7 +105,7 @@ function toast(msg, err = false) {
   setTimeout(() => el.remove(), err ? 7000 : 3500);
 }
 
-function modal({ title, body, foot, narrow, onMount }) {
+function modal({ title, body, foot, narrow, onMount, persistente }) {
   const root = $('#modal-root');
   root.innerHTML = `<div class="modal-back"><div class="modal${narrow ? ' narrow' : ''}">
     <div class="modal-head">${esc(title)}</div>
@@ -113,9 +115,10 @@ function modal({ title, body, foot, narrow, onMount }) {
   const el = $('.modal', root);
   const close = () => (root.innerHTML = '');
   $$('[data-close]', el).forEach((b) => b.addEventListener('click', close));
-  $('.modal-back', root).addEventListener('mousedown', (e) => {
-    if (e.target.classList.contains('modal-back')) close();
-  });
+  if (!persistente)
+    $('.modal-back', root).addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('modal-back')) close();
+    });
   if (onMount) onMount(el, close);
   return close;
 }
@@ -277,8 +280,9 @@ function viewCargar() {
         <h2>1. Reportes descargados</h2>
         <label class="dropzone" id="drop">
           <div class="big">Arrastrá acá los archivos o hacé clic para elegirlos</div>
-          <div class="muted">Excel (.xlsx) o CSV: User Transactions de BETS, reporte de Cash, reportes de Mercado Pago, planillas de GANEMOS o ZEUS</div>
-          <input type="file" id="file-in" multiple accept=".xlsx,.xlsm,.csv,.txt" hidden />
+          <div class="muted">Excel (.xlsx) o CSV: User Transactions de BETS, reporte de Cash, reportes de Mercado Pago, planillas de GANEMOS o ZEUS.</div>
+          <div class="muted">También capturas de pantalla (.png, .jpg) de "Mis movimientos" de las billeteras.</div>
+          <input type="file" id="file-in" multiple accept=".xlsx,.xlsm,.csv,.txt,.png,.jpg,.jpeg,.webp,.bmp" hidden />
         </label>
       </div>
       <div class="card">
@@ -331,7 +335,13 @@ afterRender.cargar = () => {
   input.addEventListener('change', () => cargarArchivos([...input.files]));
 };
 
+const ES_IMAGEN = /\.(png|jpe?g|webp|bmp)$/i;
+
 async function cargarArchivos(files) {
+  if (!files.length) return;
+  const imagenes = files.filter((f) => ES_IMAGEN.test(f.name));
+  files = files.filter((f) => !ES_IMAGEN.test(f.name));
+  if (imagenes.length) leerCapturas(imagenes);
   if (!files.length) return;
   let n = 0;
   for (const file of files) {
@@ -347,6 +357,140 @@ async function cargarArchivos(files) {
   if (!state.dia) state.dia = sugerirDia(state.fuentes, state.config);
   toast(`${n} fuente(s) reconocida(s).`);
   refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Capturas de pantalla: OCR local, revisión y alta como fuente
+
+async function leerCapturas(files) {
+  if (!api.leerCaptura) {
+    toast('La lectura de capturas solo está disponible en la aplicación de escritorio.', true);
+    return;
+  }
+  files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
+  const cap = { listas: [], unir: true, cuenta: state.config.ultimaCuentaCaptura || '', errores: [] };
+  const close = modal({
+    title: `Leyendo ${files.length} captura(s)…`,
+    persistente: true,
+    body: '<div class="empty"><div class="big" id="cap-prog">Preparando el lector…</div>La primera lectura tarda unos segundos más.</div>',
+    foot: '<span class="muted small">Todo se procesa en esta computadora, sin conexión.</span>',
+  });
+  for (let i = 0; i < files.length; i += 1) {
+    const prog = $('#cap-prog');
+    if (prog) prog.textContent = `Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`;
+    try {
+      const lines = await api.leerCaptura(new Uint8Array(await files[i].arrayBuffer()));
+      const filas = parsearCaptura(lines, { imagen: files[i].name });
+      if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
+      cap.listas.push(filas);
+    } catch (e) {
+      cap.errores.push(`${files[i].name}: ${e.message || e}`);
+    }
+  }
+  close();
+  revisarCapturas(cap);
+}
+
+function capFilas(cap) {
+  const listas = cap.listas.map((l) => l.filter((f) => !f.borrada));
+  if (!cap.unir) return { filas: listas.flat(), quitadas: 0 };
+  return unirCapturas(listas);
+}
+
+function revisarCapturas(cap) {
+  const cuerpo = () => {
+    const { filas, quitadas } = capFilas(cap);
+    const cob = filas.filter((f) => f.tipo === 'COBRO');
+    const pag = filas.filter((f) => f.tipo === 'PAGO');
+    const sum = (a) => a.reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const dudosas = filas.filter((f) => f.dudoso).length;
+    return `
+      ${cap.errores.map((e) => `<div class="notice warn">${esc(e)}</div>`).join('')}
+      <div class="notice info">Las capturas no muestran la hora: estos movimientos se cruzan por día, monto y titular, y no entran en la medición de tiempos.
+        Revisá lo leído antes de agregarlo; las filas resaltadas conviene mirarlas con la imagen.</div>
+      <div class="row" style="align-items:flex-end;margin-bottom:12px">
+        <label class="field"><span>Billetera / cuenta de estas capturas *</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
+        <label class="row small"><input type="checkbox" id="cap-unir" ${cap.unir ? 'checked' : ''} /> Quitar movimientos repetidos entre capturas que se superponen${quitadas ? ` (${quitadas} quitados)` : ''}</label>
+        <span class="spacer"></span>
+        <div class="small muted">${filas.length} movimientos · ${cob.length} cobros ${money(sum(cob))} · ${pag.length} pagos ${money(sum(pag))}${dudosas ? ` · <b class="neg">${dudosas} a revisar</b>` : ''}</div>
+      </div>
+      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th></th></tr></thead><tbody>
+      ${filas
+        .map(
+          (f) => `<tr class="${f.dudoso ? 'sel' : ''}" data-cap-row>
+          <td class="small muted">${esc(f.imagen)}</td>
+          <td><input data-cap="fecha" value="${esc(f.fecha)}" style="width:110px" /></td>
+          <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" /></td>
+          <td><select data-cap="tipo"><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobro (entra)</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pago (sale)</option></select></td>
+          <td class="num"><input data-cap="monto" value="${esc(fmtMoney(f.monto))}" style="width:120px;text-align:right" /></td>
+          <td><button class="btn sm danger" data-cap-borrar>Quitar</button></td></tr>`
+        )
+        .join('')}
+      </tbody></table></div>`;
+  };
+  modal({
+    title: 'Revisar movimientos leídos de las capturas',
+    persistente: true,
+    body: `<div id="cap-body">${cuerpo()}</div>`,
+    foot: '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="cap-ok">Agregar a la conciliación</button>',
+    onMount(el, close) {
+      const body = $('#cap-body', el);
+      const filasVisibles = () => capFilas(cap).filas;
+      const redraw = () => {
+        const top = $('.scroll', body)?.scrollTop || 0;
+        body.innerHTML = cuerpo();
+        const sc = $('.scroll', body);
+        if (sc) sc.scrollTop = top;
+      };
+      body.addEventListener('change', (e) => {
+        const t = e.target;
+        if (t.id === 'cap-unir') {
+          cap.unir = t.checked;
+          redraw();
+          return;
+        }
+        if (t.id === 'cap-cuenta') {
+          cap.cuenta = t.value.trim();
+          return;
+        }
+        if (!t.dataset.cap) return;
+        const idx = $$('[data-cap-row]', body).indexOf(t.closest('tr'));
+        const f = filasVisibles()[idx];
+        if (!f) return;
+        if (t.dataset.cap === 'monto') f.monto = parseNumber(t.value) ?? f.monto;
+        else if (t.dataset.cap === 'nombre') {
+          f.truncado = /(\.\.\.|…)\s*$/.test(t.value);
+          f.nombre = t.value.replace(/(\.\.\.|…)\s*$/, '').trim();
+        } else f[t.dataset.cap] = t.value.trim();
+        f.dudoso = false;
+        redraw();
+      });
+      body.addEventListener('click', (e) => {
+        if (!e.target.matches('[data-cap-borrar]')) return;
+        const idx = $$('[data-cap-row]', body).indexOf(e.target.closest('tr'));
+        const f = filasVisibles()[idx];
+        if (f) f.borrada = true;
+        redraw();
+      });
+      $('#cap-ok', el).addEventListener('click', () => {
+        cap.cuenta = ($('#cap-cuenta', el)?.value || cap.cuenta).trim();
+        if (!cap.cuenta) return toast('Indicá a qué billetera o cuenta corresponden las capturas.', true);
+        const filas = filasVisibles();
+        const malas = filas.filter((f) => !/^\d{2}\/\d{2}\/\d{4}$/.test(f.fecha) || !(f.monto > 0));
+        if (malas.length) return toast(`Hay ${malas.length} fila(s) sin fecha (dd/mm/aaaa) o monto válido. Corregilas o quitálas.`, true);
+        if (!filas.length) return toast('No hay movimientos para agregar.', true);
+        const nImg = new Set(filas.map((f) => f.imagen)).size;
+        const fuente = tableToFuente(`Capturas: ${cap.cuenta} (${nImg} imágenes)`, { sheet: null, rows: filasATabla(filas, cap.cuenta) }, state.config);
+        state.fuentes.push(fuente);
+        state.config.ultimaCuentaCaptura = cap.cuenta;
+        saveConfigSoon();
+        if (!state.dia) state.dia = sugerirDia(state.fuentes, state.config);
+        close();
+        toast(`${fuente.records.length} movimientos agregados desde las capturas.`);
+        refresh();
+      });
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -437,11 +581,11 @@ function viewConciliacion() {
         <td>${estadoBadge(m.estado)}${m.nota ? `<div class="muted small">${esc(m.nota)}</div>` : ''}</td>
         <td>${confBadge(m.confianza)}</td>
         <td>${tipoTxt(m.tipo)}</td>
-        <td class="nowrap">${lines(p, (r) => esc(fmtTime(r.ts)))}</td>
+        <td class="nowrap">${lines(p, (r) => esc(horaDe(r)))}</td>
         <td>${lines(p, (r) => `${esc(r.cuenta)} <span class="muted small">${esc(r.origen)}</span>`)}</td>
         <td>${lines(p, (r) => esc(r.persona))}</td>
         <td class="num">${lines(p, (r) => money(signed(r)))}</td>
-        <td class="nowrap">${lines(w, (r) => esc(fmtTime(r.ts)))}</td>
+        <td class="nowrap">${lines(w, (r) => esc(horaDe(r)))}</td>
         <td>${lines(w, (r) => `${esc(r.cuenta)} <span class="muted small">${esc(r.origen)}</span>`)}</td>
         <td>${lines(w, (r) => esc(r.persona))}</td>
         <td class="num">${lines(w, (r) => money(signed(r)))}</td>
@@ -527,7 +671,7 @@ function pendTable(list, lado, hints) {
       const man = state.manual.estados[r.id];
       return `<tr class="${sel ? 'sel' : hints.has(r.id) ? 'hint' : ''}" data-pend-row="${esc(r.id)}">
         <td><input type="checkbox" data-pend="${esc(r.id)}" ${sel ? 'checked' : ''} /></td>
-        <td class="nowrap">${esc(fmtTime(r.ts))}<div class="muted small">${esc(fmtDate(r.ts))}</div></td>
+        <td class="nowrap">${esc(horaDe(r))}<div class="muted small">${esc(fmtDate(r.ts))}</div></td>
         <td>${tipoTxt(r.tipo)}</td>
         <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}</div></td>
         <td class="num">${money(signed(r))}</td>
@@ -855,7 +999,7 @@ function verFuente(f) {
     title: `${f.nombre}${f.hoja ? ` / ${f.hoja}` : ''}`,
     body: `<h3>Así se leyó (${f.records.length} movimientos)</h3>
       <div class="scroll" style="max-height:30vh"><table class="tbl"><thead><tr><th>Fecha y hora</th><th>Op.</th><th>Agente / cuenta</th><th>Usuario / titular</th><th class="num">Monto</th><th>Ref.</th></tr></thead><tbody>
-      ${recs.map((r) => `<tr><td class="nowrap">${esc(fmtDateTime(r.ts))}</td><td>${tipoTxt(r.tipo)}</td><td>${esc(r.cuenta)}</td><td>${esc(r.persona)}</td><td class="num">${money(signed(r))}</td><td class="small">${esc(r.ref)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sin movimientos</td></tr>'}
+      ${recs.map((r) => `<tr><td class="nowrap">${esc(r.sinHora ? `${fmtDate(r.ts)} s/h` : fmtDateTime(r.ts))}</td><td>${tipoTxt(r.tipo)}</td><td>${esc(r.cuenta)}</td><td>${esc(r.persona)}</td><td class="num">${money(signed(r))}</td><td class="small">${esc(r.ref)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sin movimientos</td></tr>'}
       </tbody></table></div>
       <h3>Contenido original</h3>${previewHtml(f.rows)}`,
   });

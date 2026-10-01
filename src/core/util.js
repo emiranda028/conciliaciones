@@ -169,6 +169,11 @@ export function fmtTime(t) {
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
+// Hora de un movimiento; los leídos de capturas no la traen ("s/h").
+export function horaDe(r) {
+  return r.sinHora ? 's/h' : fmtTime(r.ts);
+}
+
 export function fmtDateTime(t) {
   return t == null ? '' : `${fmtDate(t)} ${fmtTime(t)}`;
 }

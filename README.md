@@ -17,6 +17,8 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
    | Cash: reporte con ID Interno / Dirección / COELSA | Billetera | Los "Fee" van como comisión, los "Interno" como movimiento interno y las "Revertida" se informan aparte. |
    | Mercado Pago: reporte de operaciones | Billetera | Se usa la fecha de aprobación (pasada a hora argentina). PAYOUTS cuenta como pago. |
    | Mercado Pago: reporte de retiros | Billetera | Completa el titular de los PAYOUTS. |
+   | GANEMOS en tabla (hoja "Consolidado": ID / FECHA / OPERACIÓN / INICIADOR / DE / A) | Panel | Si también se carga la hoja original, los repetidos se descartan. |
+   | **Capturas de pantalla** (.png/.jpg) de "Mis movimientos" de una billetera | Billetera | Se leen con OCR en la propia computadora. Ver más abajo. |
    | Cualquier otro Excel o CSV | Cualquiera | Se mapean las columnas una vez y el formato queda guardado. |
 
 2. **Concilia automáticamente** con las reglas del negocio:
@@ -36,6 +38,24 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
 5. **Exportación a Excel:** genera un archivo con las hojas Resumen, Conciliación, Pendientes, Tiempos, Base panel, Base billeteras y Usuarios y titulares.
 
 6. **Trabajo guardado:** el archivo `.conciliacion` guarda los reportes y las decisiones manuales para retomar después.
+
+### Capturas de pantalla
+
+Algunas billeteras solo permiten ver los movimientos en el celular. Se pueden arrastrar las capturas
+de "Mis movimientos" junto con los demás archivos:
+
+- El texto se lee con OCR (Tesseract, en español) **en la misma computadora y sin conexión**. El
+  lector y el idioma viajan dentro del `.exe`. La primera lectura tarda unos segundos; después,
+  alrededor de 1 segundo por imagen.
+- Antes de agregarlos se muestra una tabla para revisar y corregir fecha, titular, operación y monto,
+  y para indicar a qué billetera corresponden. Las filas resaltadas conviene mirarlas con la imagen
+  (por ejemplo, cuando el OCR no vio el signo "$").
+- Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
+  siguiente), se cuenta una sola vez.
+- **Las capturas no muestran la hora**, solo el día. Esos movimientos se cruzan por día, monto y
+  titular, y no entran en la medición de tiempos. Los nombres cortados ("Joana Maria Del Rosario
+  Aco...") se comparan por el principio. La confianza es alta si el diccionario ya conocía al
+  titular, media si el usuario se parece al nombre, y "Revisar" si solo coincide el monto.
 
 ### Día operativo
 
@@ -85,6 +105,7 @@ Estructura:
 
 ```
 src/core/        motor sin interfaz (se prueba con node)
+  capturas.js    capturas de pantalla: texto del OCR -> movimientos, unión de capturas
   util.js        números, fechas (hora argentina), textos
   tabular.js     lectura de xlsx / csv / texto pegado
   importers.js   reconocimiento y normalización de cada reporte

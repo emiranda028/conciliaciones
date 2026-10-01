@@ -56,9 +56,18 @@ try {
   await win.waitForSelector('[data-view=conciliacion] .count');
   const n = await win.$eval('[data-view=conciliacion] .count', (e) => e.textContent.trim());
   if (n !== '2') fail(`se esperaban 2 partidas conciliadas y hubo ${n}`);
+  // OCR de una captura de ejemplo (datos inventados): verifica que el lector viaje con la app.
+  await win.evaluate(() => document.querySelector('[data-view=cargar]').click());
+  await win.setInputFiles('#file-in', [path.resolve('test/fixtures/captura-ejemplo.png')]);
+  await win.waitForSelector('#cap-ok', { timeout: 120000 });
+  const filasOcr = await win.$$eval('[data-cap-row]', (r) => r.length);
+  if (filasOcr !== 4) fail(`OCR: se esperaban 4 movimientos en la captura y se leyeron ${filasOcr}`);
+  await win.fill('#cap-cuenta', 'Prueba');
+  await win.evaluate(() => document.querySelector('#cap-ok').click());
+  await win.waitForFunction(() => !document.querySelector('#cap-ok'));
   await win.waitForTimeout(1000);
   if (!fs.existsSync(path.join(dir, 'ConciliadorDatos', 'configuracion.json'))) fail('no se guardó la configuración junto al ejecutable');
-  if (!process.exitCode) console.log('OK: la app abre, lee los reportes, concilia (2/2), bloquea la red y guarda la configuración.');
+  if (!process.exitCode) console.log(`OK: la app abre, lee los reportes, concilia (2/2), lee capturas con OCR (${filasOcr}/4), bloquea la red y guarda la configuración.`);
 } finally {
   await app.close();
 }

@@ -1,6 +1,6 @@
 // Resúmenes, tiempos de demora y exportación a Excel.
 import ExcelJS from 'exceljs';
-import { DIA, HORA, MIN, fmtDate, fmtTime, fmtDuration, median, percentile, round2, parseTimeOfDay } from './util.js';
+import { DIA, HORA, MIN, fmtDate, horaDe, fmtDuration, median, percentile, round2, parseTimeOfDay } from './util.js';
 import { ESTADOS } from './matcher.js';
 
 export const DEFAULT_TURNOS = [
@@ -216,8 +216,8 @@ const recCols = (prefix = '') => [
 function recRow(r, turnos) {
   return {
     fecha: fmtDate(r.ts),
-    hora: fmtTime(r.ts),
-    turno: turnoDe(r.ts, turnos),
+    hora: horaDe(r),
+    turno: r.sinHora ? '' : turnoDe(r.ts, turnos),
     origen: r.origen,
     cuenta: r.cuenta,
     persona: r.persona,
@@ -306,12 +306,12 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
       tipo: m.tipo,
       turno: turnoDe(m.panel[0]?.ts ?? m.ts, turnos),
       pFecha: m.panel[0] ? fmtDate(m.panel[0].ts) : '',
-      pHora: joinF(m.panel, (r) => fmtTime(r.ts)),
+      pHora: joinF(m.panel, horaDe),
       pOrigen: m.panel[0]?.origen || '',
       pCuenta: joinF(m.panel, (r) => r.cuenta),
       pPersona: joinF(m.panel, (r) => r.persona),
       montoPanel: m.montoPanel,
-      wHora: joinF(m.billetera, (r) => fmtTime(r.ts)),
+      wHora: joinF(m.billetera, horaDe),
       wOrigen: m.billetera[0]?.origen || '',
       wCuenta: joinF(m.billetera, (r) => r.cuenta),
       wPersona: joinF(m.billetera, (r) => r.persona),

@@ -89,10 +89,18 @@ function nameRelation(dicc, p, w) {
   const known = mappedNames(dicc, p.persona);
   const wk = nameKey(w.persona);
   if (known && Object.keys(known).length) {
-    if (known[wk]) return 'conocido';
+    if (known[wk] || Object.keys(known).some((k) => mismoNombre(k, wk))) return 'conocido';
     return nameHint(p.persona, w.persona) ? 'pista' : 'distinto';
   }
   return nameHint(p.persona, w.persona) ? 'pista' : null;
+}
+
+// Nombres iguales o uno es el principio del otro (capturas con el nombre cortado:
+// "joana maria del rosario aco" ~ "joana maria del rosario acosta"). Mínimo dos palabras.
+function mismoNombre(a, b) {
+  if (a === b) return true;
+  const [corto, largo] = a.length <= b.length ? [a, b] : [b, a];
+  return corto.split(' ').length >= 2 && corto.length >= 8 && largo.startsWith(corto);
 }
 
 // Demora "lógica" en ms: positiva cuando el orden es el esperado.
@@ -185,7 +193,7 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
   for (const id of Object.keys(estadosManuales)) if (byId.has(id)) usados.add(id);
 
   const pLibres = () => panel.filter((r) => MATCHABLE.has(r.tipo) && !usados.has(r.id));
-  const wSorted = sortedByTs(billetera.filter((r) => MATCHABLE.has(r.tipo)));
+  const wSorted = sortedByTs(billetera.filter((r) => MATCHABLE.has(r.tipo) && !r.sinHora));
 
   // 2) Pares 1 a 1. Dos rondas: la segunda usa lo aprendido en la primera.
   let dicc = cloneDicc(diccionario);
@@ -231,6 +239,17 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
     compensar(pLibres(), wSorted.filter((w) => !usados.has(w.id)), params, dicc, usados, matches);
   }
 
+  // 3b) Movimientos sin hora (capturas de pantalla): se cruzan por día, monto y nombre.
+  cruzarSinHora(
+    pLibres(),
+    billetera.filter((r) => r.sinHora && MATCHABLE.has(r.tipo) && !usados.has(r.id)),
+    params,
+    dicc,
+    usados,
+    matches,
+    rechazados
+  );
+
   // 4) Lo que quedó suelto se clasifica.
   const pendientes = [];
   for (const r of panel) {
@@ -241,7 +260,7 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
   const sueltosW = billetera.filter((r) => !usados.has(r.id) || estadosManuales[r.id]);
   for (const r of sueltosW) {
     const man = estadosManuales[r.id];
-    if (!man && r.tipo === 'PAGO' && esDuplicado(r, pagosConciliados, sueltosW, params)) {
+    if (!man && r.tipo === 'PAGO' && !r.sinHora && esDuplicado(r, pagosConciliados, sueltosW, params)) {
       pendientes.push({ registro: r, estado: ESTADOS.PAGO_DUPLICADO, nota: '', automatico: true });
       continue;
     }
@@ -367,6 +386,52 @@ function compensar(pLibres, wLibres, params, dicc, usados, matches) {
       m.diferencia = round2(m.montoPanel - m.montoBilletera);
       matches.push(m);
     }
+  }
+}
+
+// Capturas sin hora: el movimiento de billetera es del día (calendario) indicado. Se aceptan
+// cruces con nombre conocido o parecido, o cuando el monto es único ese día en ambos lados.
+function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechazados) {
+  if (!wSinHora.length) return;
+  const tol = params.toleranciaRelojMin * MIN;
+  const pares = [];
+  for (const w of wSinHora) {
+    const desde = w.ts - 12 * 60 * MIN;
+    const hasta = desde + 24 * 60 * MIN;
+    for (const p of pLibres) {
+      if (p.tipo !== w.tipo || usados.has(p.id) || rechazados.has(`${p.id}|${w.id}`)) continue;
+      const okVentana =
+        p.tipo === 'COBRO'
+          ? p.ts >= desde - tol && p.ts < hasta + params.demoraMaxCobroMin * MIN
+          : p.ts >= desde - params.demoraMaxPagoMin * MIN && p.ts < hasta + tol;
+      if (!okVentana) continue;
+      const amount = amountRelation(p.monto, w.monto, params, p.tipo);
+      if (!amount) continue;
+      const rel = nameRelation(dicc, p, w);
+      let score = 100 + (rel === 'conocido' ? 60 : rel === 'pista' ? 25 : rel === 'distinto' ? -45 : 0);
+      if (amount.tipo !== 'exacto') score -= 15;
+      pares.push({ p, w, amount, rel, score });
+    }
+  }
+  const candP = new Map();
+  const candW = new Map();
+  for (const x of pares) {
+    candP.set(x.p.id, (candP.get(x.p.id) || 0) + 1);
+    candW.set(x.w.id, (candW.get(x.w.id) || 0) + 1);
+  }
+  pares.sort((a, b) => b.score - a.score);
+  for (const x of pares) {
+    if (usados.has(x.p.id) || usados.has(x.w.id)) continue;
+    const unico = candP.get(x.p.id) === 1 && candW.get(x.w.id) === 1;
+    if (!(x.rel === 'conocido' || x.rel === 'pista' || (unico && x.rel !== 'distinto'))) continue;
+    usados.add(x.p.id);
+    usados.add(x.w.id);
+    const estado = x.amount.tipo === 'bonificacion' ? ESTADOS.BONIFICACION : ESTADOS.CONCILIADO;
+    const nota = ['Captura sin hora', x.amount.tipo === 'bonificacion' ? `bonificación ${x.amount.pct}%` : ''].filter(Boolean).join(', ');
+    const m = buildMatch([x.p], [x.w], estado, nota);
+    m.demora = null;
+    m.confianza = x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
+    matches.push(m);
   }
 }
 

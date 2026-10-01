@@ -15,11 +15,12 @@
   "author": "",
   "license": "UNLICENSED",
   "devDependencies": {
+    "@tesseract.js-data/spa": "^1.0.0",
     "electron": "^38.8.6",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
-    "javascript-obfuscator": "^5.8.0",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "javascript-obfuscator": "^5.8.0"
   },
   "build": {
     "appId": "ar.conciliador.fichas",
@@ -49,6 +50,21 @@
     },
     "extraMetadata": {
       "main": "build/main.cjs"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/@tesseract.js-data/spa/4.0.0_best_int",
+        "to": "tessdata",
+        "filter": [
+          "spa.traineddata.gz"
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "tesseract.js": "^7.0.0"
   }
 }
