@@ -16,6 +16,8 @@ import {
   serializarTrabajo,
   deserializarTrabajo,
   tableToFuente,
+  agentesDePaneles,
+  DEFAULT_LINEAS,
 } from '../core/session.js';
 import { parsearCaptura, unirCapturas, filasATabla } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
@@ -55,7 +57,7 @@ const state = {
     conc: { q: '', estado: '', conf: '', tipo: '' },
     pend: { q: '', tipo: '', info: false },
     tiempos: 'COBRO',
-    config: 'parametros',
+    config: 'lineas',
     dicQ: '',
   },
   sel: new Set(),
@@ -178,7 +180,7 @@ function recompute() {
     state.run = null;
     return;
   }
-  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia });
+  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia, linea: state.config.lineaActiva });
   const antes = JSON.stringify(state.config.diccionario);
   state.config.diccionario = unirDiccionario(state.config.diccionario, state.run.diccionarioAprendido);
   if (JSON.stringify(state.config.diccionario) !== antes) saveConfigSoon();
@@ -236,8 +238,16 @@ function render() {
   afterRender[state.view]?.();
 }
 
+function lineaSelectHtml(id) {
+  const act = state.config.lineaActiva;
+  return `<select id="${id}" data-linea-select title="Concilia solo los agentes de esa línea">
+    <option value="">Todas las líneas</option>
+    ${state.config.lineas.map((l) => `<option ${l.nombre === act ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}
+  </select>`;
+}
+
 function diaSelectorHtml() {
-  return `<label class="row small muted" title="El día operativo va de las ${state.config.horaInicioDia}:00 hasta las ${state.config.horaInicioDia}:00 del día siguiente">
+  return `<label class="row small muted">Línea ${lineaSelectHtml('linea')}</label><label class="row small muted" title="El día operativo va de las ${state.config.horaInicioDia}:00 hasta las ${state.config.horaInicioDia}:00 del día siguiente">
     Día operativo <input type="date" id="dia" value="${esc(state.dia)}" />
     <button class="btn sm" data-act="dia-todo" ${state.dia ? '' : 'disabled'}>Ver todo</button></label>`;
 }
@@ -312,11 +322,32 @@ function viewCargar() {
     ${
       state.fuentes.some((f) => f.activa && f.records.length)
         ? `<div class="card"><h2>3. Conciliar</h2><div class="row">
+            <label class="field"><span>Línea</span>${lineaSelectHtml('linea-cargar')}</label>
             <label class="field"><span>Día operativo (desde las ${state.config.horaInicioDia}:00)</span><input type="date" id="dia-cargar" value="${esc(state.dia)}" /></label>
-            <span class="muted small" style="max-width:420px">Se concilian todos los movimientos cargados y se muestran los del día elegido. Dejalo vacío para ver todo.</span>
-            <span class="spacer"></span><button class="btn primary" data-act="conciliar">Conciliar</button></div></div>`
+            <span class="muted small" style="max-width:420px">Se concilian todos los movimientos cargados y se muestran los del día elegido. Dejalo vacío para ver todo.
+              Con una línea elegida, de los paneles solo se toman los agentes de esa línea.</span>
+            <span class="spacer"></span><button class="btn primary" data-act="conciliar">Conciliar</button></div>
+            ${agentesResumenHtml()}</div>`
         : ''
     }`;
+}
+
+// Agentes encontrados en los paneles cargados y a qué línea pertenecen.
+function agentesResumenHtml() {
+  const ags = agentesDePaneles(state.fuentes, state.config);
+  if (!ags.length) return '';
+  const act = state.config.lineaActiva;
+  const sinLinea = ags.filter((a) => !a.linea);
+  return `<h3>Agentes en los paneles cargados</h3><div class="row">
+    ${ags
+      .map((a) => {
+        const cls = !a.linea ? 'bad' : act && a.linea !== act ? '' : 'ok';
+        const txt = !a.linea ? 'sin línea' : a.linea;
+        return `<span class="badge ${cls}" title="${esc(a.origenes.join(', '))}">${esc(a.agente)} · ${a.movimientos} · ${esc(txt)}</span>`;
+      })
+      .join('')}
+    </div>${sinLinea.length ? `<p class="small neg">Hay agentes sin línea asignada. Asignalos en Configuración → Líneas y agentes; si no, quedan afuera al elegir una línea.</p>` : ''}
+    ${act ? `<p class="small muted">En verde, los agentes que entran en la línea ${esc(act)}. Los demás se dejan afuera.</p>` : ''}`;
 }
 
 afterRender.cargar = () => {
@@ -503,6 +534,17 @@ function viewResumen() {
   const avisos = [];
   const sinUsar = state.fuentes.filter((f) => !f.activa || !f.importerKey).length;
   if (sinUsar) avisos.push(`${sinUsar} hoja(s) o archivo(s) cargados no se están usando.`);
+  const excl = Object.entries(state.run.excluidosLinea || {});
+  if (excl.length) {
+    const txt = excl
+      .sort((a, b) => b[1] - a[1])
+      .map(([ag, n]) => {
+        const l = state.config.lineas.find((x) => x.agentes.some((a) => a.toLowerCase().replace(/[^a-z0-9]/g, '') === ag.toLowerCase().replace(/[^a-z0-9]/g, '')));
+        return `${ag} (${n}${l ? `, línea ${l.nombre}` : ', sin línea'})`;
+      })
+      .join(', ');
+    avisos.push(`Línea ${state.run.linea}: de los paneles cargados (todos los días) se dejaron afuera ${excl.reduce((s, e) => s + e[1], 0)} movimientos de otros agentes: ${txt}.`);
+  }
   if (state.run.duplicadosDescartados) avisos.push(`Se descartaron ${state.run.duplicadosDescartados} movimientos que venían repetidos en más de un archivo u hoja.`);
   if (!state.run.panel.length) avisos.push('No hay movimientos de panel (fichas) cargados.');
   if (!state.run.billetera.length) avisos.push('No hay movimientos de billeteras (dinero) cargados.');
@@ -841,6 +883,7 @@ function viewTiempos() {
 function viewConfig() {
   const tab = state.f.config;
   const tabs = [
+    ['lineas', 'Líneas y agentes'],
     ['parametros', 'Reglas de cruce'],
     ['turnos', 'Turnos y día'],
     ['diccionario', 'Usuarios y titulares'],
@@ -896,6 +939,32 @@ function viewConfig() {
       <table class="tbl" style="max-width:700px"><thead><tr><th>Cuenta en el reporte</th><th>Nombre a mostrar</th></tr></thead><tbody>
       ${[...cuentas].sort().map((c) => `<tr><td>${esc(c)}</td><td><input data-alias="${esc(c)}" value="${esc(state.config.alias[c.toLowerCase().replace(/[^a-z0-9]/g, '')] || '')}" placeholder="(sin cambios)" style="width:320px" /></td></tr>`).join('') || '<tr><td colspan="2" class="muted">Cargá reportes de billeteras para ver sus cuentas.</td></tr>'}
       </tbody></table>`;
+  } else if (tab === 'lineas') {
+    const ags = agentesDePaneles(state.fuentes, state.config);
+    body = `<p class="muted">Cada línea concilia los agentes de sus paneles contra sus billeteras. En GANEMOS y ZEUS vienen mezclados agentes de varias líneas:
+      al elegir una línea, se toman solo sus agentes (el agente es el usuario del cajero: AgenteFB1, josefina.2332, agentez…).</p>
+      <table class="tbl"><thead><tr><th>Línea</th><th>Agentes (separados por coma)</th><th></th></tr></thead><tbody>
+      ${state.config.lineas
+        .map(
+          (l, i) => `<tr><td><input data-linea="${i}" data-k="nombre" value="${esc(l.nombre)}" style="width:160px" /></td>
+          <td><input data-linea="${i}" data-k="agentes" value="${esc(l.agentes.join(', '))}" style="width:100%" /></td>
+          <td><button class="btn sm danger" data-linea-quitar="${i}">Quitar</button></td></tr>`
+        )
+        .join('')}
+      </tbody></table>
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-act="linea-agregar">Agregar línea</button><span class="spacer"></span><button class="btn sm" data-act="lineas-default">Restablecer líneas</button></div>
+      <h3>Agentes en los paneles cargados</h3>
+      ${
+        ags.length
+          ? `<table class="tbl" style="max-width:760px"><thead><tr><th>Agente</th><th>Panel</th><th class="num">Movimientos</th><th>Línea</th></tr></thead><tbody>
+        ${ags
+          .map(
+            (a) => `<tr><td>${esc(a.agente)}</td><td>${esc(a.origenes.join(', '))}</td><td class="num">${a.movimientos}</td>
+            <td><select data-agente-linea="${esc(a.agente)}"><option value="">(sin línea)</option>${state.config.lineas.map((l) => `<option ${l.nombre === a.linea ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select></td></tr>`
+          )
+          .join('')}</tbody></table>`
+          : '<p class="muted">Cargá paneles para ver sus agentes.</p>'
+      }`;
   } else if (tab === 'plantillas') {
     const pl = Object.entries(state.config.plantillas);
     body = `<p class="muted">Formatos de columnas que mapeaste a mano. Se aplican solos cuando cargás un archivo con los mismos encabezados.</p>
@@ -908,7 +977,31 @@ function viewConfig() {
     <p class="muted small">La configuración se guarda en: ${esc(state.dataDir)}</p>`;
 }
 
+const normAg = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
 afterRender.config = () => {
+  $$('[data-linea]').forEach((el) =>
+    el.addEventListener('change', () => {
+      const l = state.config.lineas[+el.dataset.linea];
+      const anterior = l.nombre;
+      if (el.dataset.k === 'nombre') {
+        l.nombre = el.value.trim() || anterior;
+        if (state.config.lineaActiva === anterior) state.config.lineaActiva = l.nombre;
+      } else l.agentes = el.value.split(',').map((x) => x.trim()).filter(Boolean);
+      saveConfigSoon();
+      refresh();
+    })
+  );
+  $$('[data-agente-linea]').forEach((el) =>
+    el.addEventListener('change', () => {
+      const ag = el.dataset.agenteLinea;
+      for (const l of state.config.lineas) l.agentes = l.agentes.filter((a) => normAg(a) !== normAg(ag));
+      const l = state.config.lineas.find((x) => x.nombre === el.value);
+      if (l) l.agentes.push(ag);
+      saveConfigSoon();
+      refresh();
+    })
+  );
   $$('[data-param]').forEach((el) =>
     el.addEventListener('change', () => {
       const k = el.dataset.param;
@@ -1070,7 +1163,7 @@ function mapearColumnas(f) {
 
 async function exportar() {
   const run = state.run;
-  const titulo = run.ventana ? `Conciliación del día operativo ${fmtDate(run.ventana.from)}` : 'Conciliación';
+  const titulo = `${run.ventana ? `Conciliación del día operativo ${fmtDate(run.ventana.from)}` : 'Conciliación'}${run.linea ? ` · Línea ${run.linea}` : ''}`;
   const buf = await exportarExcel({
     res: run.vista,
     resumenData: run.resumen,
@@ -1081,7 +1174,7 @@ async function exportar() {
     turnos: state.config.turnos,
     titulo,
   });
-  const nombre = `Conciliacion_${state.dia || isoDay(Date.now())}.xlsx`;
+  const nombre = `Conciliacion_${run.linea ? `${run.linea}_` : ''}${state.dia || isoDay(Date.now())}.xlsx`;
   const p = await api.saveFile(nombre, new Uint8Array(buf), [{ name: 'Excel', extensions: ['xlsx'] }]);
   if (p) toast(`Guardado: ${p}`);
 }
@@ -1193,6 +1286,19 @@ document.addEventListener('click', async (e) => {
     } else if (d.configTab) {
       state.f.config = d.configTab;
       render();
+    } else if (d.act === 'linea-agregar') {
+      state.config.lineas.push({ nombre: `Línea ${state.config.lineas.length + 1}`, agentes: [] });
+      saveConfigSoon();
+      render();
+    } else if (d.lineaQuitar != null) {
+      const [l] = state.config.lineas.splice(+d.lineaQuitar, 1);
+      if (l && state.config.lineaActiva === l.nombre) state.config.lineaActiva = '';
+      saveConfigSoon();
+      refresh();
+    } else if (d.act === 'lineas-default') {
+      state.config.lineas = DEFAULT_LINEAS.map((l) => ({ ...l, agentes: [...l.agentes] }));
+      saveConfigSoon();
+      refresh();
     } else if (d.act === 'params-default') {
       state.config.params = { ...DEFAULT_PARAMS };
       saveConfigSoon();
@@ -1245,6 +1351,10 @@ document.addEventListener('change', (e) => {
     f.mapping = null;
     parseFuente(f);
     f.activa = !!f.importerKey && (f.records.length > 0 || !!f.nombres);
+    refresh();
+  } else if (t.dataset.lineaSelect != null) {
+    state.config.lineaActiva = t.value;
+    saveConfigSoon();
     refresh();
   } else if (t.id === 'dia' || t.id === 'dia-cargar') {
     state.dia = t.value;

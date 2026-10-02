@@ -364,3 +364,26 @@ test('ids estables', () => {
   ]);
   assert.deepEqual(recs.map((r) => r.id), ['CASH|abc|COBRO', 'CASH|1|COBRO|5|a', 'CASH|1|COBRO|5|a#2']);
 });
+
+test('líneas: solo se concilian los agentes de la línea elegida', async () => {
+  const { ejecutar, agentesDePaneles, lineaDeAgente } = await import('../src/core/session.js');
+  const config = mergeConfig(null);
+  assert.equal(lineaDeAgente(config, 'Josefina.2332').nombre, 'AgenteB');
+  assert.equal(lineaDeAgente(config, 'agent01'), null);
+  const rows = [
+    ['Nro', 'Fecha', '', 'Operación', 'Agente', 'Destino', 'Depósito', 'Retiro', 'Saldo'],
+    ['a1', '2026-09-29 10:05:00', 'DEPOSITO (Solicitado por 1)', 'agentez', 'joni29zgg', '1000', '0', '1000'],
+    ['a2', '2026-09-29 11:05:00', 'DEPOSITO (Solicitado por 2)', 'agent01', 'leti8459', '2000', '0', '2000'],
+    ['a3', '2026-09-29 12:05:00', 'DEPOSITO (Solicitado por 3)', 'agenteb', 'viviana68zz', '3000', '0', '3000'],
+  ];
+  const zeus = tableToFuente('zeus.xlsx', { sheet: 'zeus', rows }, config);
+  const cash = fuenteCsv('cash.csv', cashCsv([{ fecha: '29/09/2026, 10:03:00', monto: 1000, tipo: 'COBRO', nombre: 'Jonatan Ejemplo' }]));
+  const ags = agentesDePaneles([zeus], config);
+  assert.deepEqual(ags.map((a) => [a.agente, a.linea]), [['agent01', ''], ['agentez', 'AgenteZ'], ['agenteb', 'AgenteB']].sort((x, y) => x[1].localeCompare(y[1])));
+  const todas = ejecutar({ fuentes: [zeus, cash], config, manual: {}, dia: '2026-09-29' });
+  assert.equal(todas.resumen.nPanelOperables, 3);
+  const z = ejecutar({ fuentes: [zeus, cash], config, manual: {}, dia: '2026-09-29', linea: 'AgenteZ' });
+  assert.equal(z.resumen.nPanelOperables, 1);
+  assert.equal(z.resumen.avance, 1);
+  assert.deepEqual(z.excluidosLinea, { agent01: 1, agenteb: 1 });
+});

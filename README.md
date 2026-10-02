@@ -39,6 +39,14 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
 
 6. **Trabajo guardado:** el archivo `.conciliacion` guarda los reportes y las decisiones manuales para retomar después.
 
+### Líneas y agentes
+
+Cada línea (AgenteZ, AgenteB, Agente777, Agente10, Flordeagente, Martin, Lourdes, Tatiana,
+Oficina01) concilia los agentes de sus paneles contra sus billeteras. En GANEMOS y ZEUS vienen
+mezclados agentes de varias líneas, así que al elegir una línea se toman solo sus agentes; los demás
+se informan como "dejados afuera". Los agentes de cada línea se editan en Configuración → Líneas y
+agentes, donde también se ven los agentes encontrados en los paneles cargados para asignarles línea.
+
 ### Capturas de pantalla
 
 Algunas billeteras solo permiten ver los movimientos en el celular. Se pueden arrastrar las capturas

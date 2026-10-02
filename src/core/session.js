@@ -14,7 +14,45 @@ export const DEFAULT_CONFIG = {
   diccionario: {},
   plantillas: {}, // firma de encabezados -> mapeo genérico
   alias: {}, // código de cuenta -> nombre visible (ej. cuenta de Mercado Pago)
+  lineas: [], // [{ nombre, agentes: ['agentez', ...] }] (ver DEFAULT_LINEAS)
+  lineaActiva: '',
 };
+
+// Líneas de negocio: cada una concilia los agentes de sus paneles contra sus billeteras.
+// En GANEMOS y ZEUS vienen mezclados agentes de varias líneas; se filtran por agente.
+export const DEFAULT_LINEAS = [
+  { nombre: 'AgenteZ', agentes: ['agentez', 'Agentead1'] },
+  { nombre: 'AgenteB', agentes: ['agenteb', 'josefina.2332', 'AgenteFB1'] },
+  { nombre: 'Agente777', agentes: ['agente777'] },
+  { nombre: 'Agente10', agentes: ['agente10'] },
+  { nombre: 'Flordeagente', agentes: ['flordeagente'] },
+  { nombre: 'Martin', agentes: ['martin'] },
+  { nombre: 'Lourdes', agentes: ['lourdes'] },
+  { nombre: 'Tatiana', agentes: ['tatiana'] },
+  { nombre: 'Oficina01', agentes: ['oficina01'] },
+];
+
+export function lineaDeAgente(config, agente) {
+  const k = norm(agente);
+  return (config.lineas || []).find((l) => l.agentes.some((a) => norm(a) === k)) || null;
+}
+
+// Agentes que aparecen en los paneles cargados, con su línea (o sin asignar).
+export function agentesDePaneles(fuentes, config) {
+  const cuenta = new Map();
+  {
+    for (const r of dataset(fuentes, config).panel) {
+      if (!r.cuenta) continue;
+      const e = cuenta.get(norm(r.cuenta)) || { agente: r.cuenta, origenes: new Set(), movimientos: 0 };
+      e.origenes.add(r.origen);
+      e.movimientos += 1;
+      cuenta.set(norm(r.cuenta), e);
+    }
+  }
+  return [...cuenta.values()]
+    .map((e) => ({ ...e, origenes: [...e.origenes], linea: lineaDeAgente(config, e.agente)?.nombre || '' }))
+    .sort((a, b) => a.linea.localeCompare(b.linea) || b.movimientos - a.movimientos);
+}
 
 export function mergeConfig(saved) {
   const c = { ...DEFAULT_CONFIG, ...(saved || {}) };
@@ -23,6 +61,8 @@ export function mergeConfig(saved) {
   c.diccionario = saved?.diccionario || {};
   c.plantillas = saved?.plantillas || {};
   c.alias = saved?.alias || {};
+  c.lineas = saved?.lineas?.length ? saved.lineas : DEFAULT_LINEAS.map((l) => ({ ...l, agentes: [...l.agentes] }));
+  c.lineaActiva = saved?.lineaActiva || '';
   return c;
 }
 
@@ -172,8 +212,22 @@ export function sugerirDia(fuentes, config) {
 }
 
 // Corre todo. dia: 'YYYY-MM-DD' o '' para no filtrar.
-export function ejecutar({ fuentes, config, manual, dia }) {
-  const { panel, billetera, duplicadosDescartados } = dataset(fuentes, config);
+export function ejecutar({ fuentes, config, manual, dia, linea }) {
+  const ds = dataset(fuentes, config);
+  const { billetera, duplicadosDescartados } = ds;
+  let { panel } = ds;
+  // Línea elegida: solo los movimientos de panel de sus agentes.
+  const excluidosLinea = {};
+  const l = linea ? (config.lineas || []).find((x) => x.nombre === linea) : null;
+  if (l) {
+    const agentes = new Set(l.agentes.map(norm));
+    panel = panel.filter((r) => {
+      if (agentes.has(norm(r.cuenta))) return true;
+      const k = r.cuenta || '(sin agente)';
+      excluidosLinea[k] = (excluidosLinea[k] || 0) + 1;
+      return false;
+    });
+  }
   const res = conciliar(panel, billetera, { params: config.params, diccionario: config.diccionario, manual });
   const dayMs = dayFromIso(dia);
   const ventana = dayMs == null ? null : ventanaDia(dayMs, config.horaInicioDia);
@@ -182,6 +236,8 @@ export function ejecutar({ fuentes, config, manual, dia }) {
     panel,
     billetera,
     duplicadosDescartados,
+    linea: l ? l.nombre : '',
+    excluidosLinea,
     completo: res,
     vista,
     ventana,
