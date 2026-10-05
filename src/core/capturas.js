@@ -20,6 +20,19 @@ function buscarMonto(text) {
   return null;
 }
 
+const HORA_RE = /\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?\s*(?:hs?\b)?/i;
+
+// Contraparte en el segundo renglón ("a Miriam Marcela Brun", "de Victor Javier Villa").
+// El OCR a veces pega la preposición al nombre ("aMiriam") o deja restos del ícono ("> ", "€ ").
+function contraparte(txt) {
+  const t = String(txt || '').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/, '');
+  const m = t.match(/^(de|a|para)(\s?)(.*)$/i);
+  if (!m || !m[3] || !/^[A-ZÁÉÍÓÚÑ]/.test(m[3])) return null;
+  // "a"/"de" pegados solo si siguen con mayúscula ("aMiriam"); "Acreditación" no califica.
+  if (!m[2] && m[1].length > 0 && m[1][0] === m[1][0].toUpperCase()) return null;
+  return m[3];
+}
+
 const FECHA = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
 const COBRO_RE = /recibid|recibiste|te enviaron|te transfirieron|cobr|ingres|acredit|deposit|reintegr|devoluci/i;
 const PAGO_RE = /enviad|enviaste|pagast|pago|retir|debit|extracci|transferiste/i;
@@ -101,10 +114,29 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
     const f = detalle.match(FECHA) || l.text.match(FECHA);
     const fecha = f ? inferirFecha(+f[1], +f[2], f[3], hoy) : ultimaFecha;
     if (fecha) ultimaFecha = fecha;
+    // Hora, si la billetera la muestra ("13:45", "13:45 hs").
+    const sinFecha = (x) => x.replace(FECHA, ' ');
+    const h = sinFecha(detalle).match(HORA_RE) || sinFecha(nombreTxt).match(HORA_RE);
+    const hora = h ? `${String(h[1]).padStart(2, '0')}:${h[2]}${h[3] ? `:${h[3]}` : ''}` : '';
+    // Dos formatos de lista:
+    //   A) renglón 1: titular + monto; renglón 2: leyenda + fecha ("Transferencia recibida").
+    //   B) renglón 1: leyenda + monto ("Te enviaron dinero"); renglón 2: "de/a Titular" + fecha.
+    let nombreFinal = nombre;
+    let truncadoFinal = truncado;
+    let leyendaTxt = sinFecha(detalle).replace(HORA_RE, ' ');
+    let textoTipo = detalle;
+    const otro = contraparte(sinFecha(detalle).replace(HORA_RE, ' ').trim());
+    if (otro) {
+      const c = limpiarNombre(otro);
+      leyendaTxt = nombre;
+      nombreFinal = c.nombre;
+      truncadoFinal = c.truncado;
+      textoTipo = nombre;
+    }
     let tipo;
     let dudoso = false;
-    if (COBRO_RE.test(detalle)) tipo = 'COBRO';
-    else if (PAGO_RE.test(detalle)) tipo = 'PAGO';
+    if (COBRO_RE.test(textoTipo)) tipo = 'COBRO';
+    else if (PAGO_RE.test(textoTipo)) tipo = 'PAGO';
     else {
       tipo = m.signo === '+' ? 'COBRO' : 'PAGO';
       dudoso = true;
@@ -112,12 +144,13 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
     if ((m.signo === '+' && tipo === 'PAGO') || m.dudoso) dudoso = true;
     filas.push({
       fecha,
-      nombre,
+      hora,
+      nombre: nombreFinal,
       tipo,
       monto,
-      truncado,
-      leyenda: leyendaVisible(detalle.replace(FECHA, '')),
-      dudoso: dudoso || !fecha || !nombre || (l.confidence != null && l.confidence < 60),
+      truncado: truncadoFinal,
+      leyenda: leyendaVisible(leyendaTxt),
+      dudoso: dudoso || !fecha || !nombreFinal || (l.confidence != null && l.confidence < 60),
       imagen,
     });
   }
@@ -160,9 +193,9 @@ export function unirCapturas(listas) {
   return { filas: grupos.flat(), quitadas };
 }
 
-export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Leyenda', 'Origen: captura de pantalla'];
+export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Leyenda', 'Hora', 'Origen: captura de pantalla'];
 
 // Tabla que se guarda como fuente (así se puede guardar en el trabajo y volver a leer).
 export function filasATabla(filas, cuenta) {
-  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda)])];
+  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || ''])];
 }

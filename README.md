@@ -61,6 +61,11 @@ de "Mis movimientos" junto con los demás archivos:
 - Se guarda la leyenda de cada movimiento ("Pago con QR", "Rendimientos"…) salvo las habituales de
   transferencias: "Transferencia enviada", "Transferencia recibida", "Te enviaron dinero" y
   "Enviaste dinero". La leyenda se ve en la revisión, en Pendientes y en el Excel exportado.
+- Reconoce dos formatos de lista: titular arriba y leyenda abajo ("Transferencia recibida"), o
+  leyenda arriba y "de/a Titular" abajo ("Te enviaron dinero" / "de Victor…", como Personal Pay).
+- Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
+  en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
+  confunda el "$" con un número.
 - Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
   siguiente), se cuenta una sola vez.
 - **Las capturas no muestran la hora**, solo el día. Esos movimientos se cruzan por día, monto y

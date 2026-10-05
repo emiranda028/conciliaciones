@@ -494,31 +494,35 @@ const capturas = {
   parse(rows) {
     const out = [];
     let skipped = 0;
+    // Columnas por nombre: trabajos guardados con versiones anteriores no tienen Leyenda ni Hora.
+    const cols = rows[0].map(norm);
+    const col = (n, def) => (cols.indexOf(n) >= 0 ? cols.indexOf(n) : def);
+    const [iF, iT, iO, iM, iC, iI, iL, iH] = [col('fecha', 0), col('titular', 1), col('operacion', 2), col('monto', 3), col('cuenta', 4), col('imagen', 5), col('leyenda', -1), col('hora', -1)];
     for (const row of rows.slice(1)) {
-      // Trabajos guardados con versiones anteriores no tienen la columna Leyenda.
-      const conLeyenda = norm(rows[0][6]) === 'leyenda';
-      const [fecha, titular, op, monto, cuenta, imagen] = row;
-      const leyenda = conLeyenda ? cleanText(row[6]) : '';
-      const day = parseDateTime(fecha);
-      const m = parseNumber(monto);
+      const day = parseDateTime(row[iF]);
+      const m = parseNumber(row[iM]);
       if (day == null || !m) {
         skipped += 1;
         continue;
       }
-      const nombre = cleanText(titular);
+      const tod = iH >= 0 ? parseTimeOfDay(row[iH]) : null;
+      const inicioDia = day - (((day % 86400000) + 86400000) % 86400000);
+      const nombre = cleanText(row[iT]);
+      const op = row[iO];
       out.push(
         mk({
           lado: LADO.BILLETERA,
           origen: 'CAPTURA',
-          cuenta: cleanText(cuenta),
+          cuenta: cleanText(row[iC]),
           persona: nombre.replace(/(\.\.\.|…)$/, '').trim(),
-          ts: day - (((day % 86400000) + 86400000) % 86400000) + 12 * 3600000,
-          sinHora: true,
+          // Sin hora se ubica al mediodía y el cruce usa el día completo.
+          ts: inicioDia + (tod ?? 12 * 3600000),
+          sinHora: tod == null,
           truncado: /(\.\.\.|…)$/.test(nombre),
           tipo: norm(op).startsWith('cobro') ? 'COBRO' : 'PAGO',
           monto: m,
-          detalle: leyenda,
-          imagen: cleanText(imagen),
+          detalle: iL >= 0 ? cleanText(row[iL]) : '',
+          imagen: cleanText(row[iI]),
         })
       );
     }

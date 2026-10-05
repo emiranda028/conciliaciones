@@ -1,6 +1,6 @@
 // Proceso principal de Electron: ventana, archivos y configuración local.
 // La app no usa red: cualquier pedido http/https se bloquea.
-const { app, BrowserWindow, ipcMain, dialog, session, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, Menu, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -103,9 +103,22 @@ async function getOcr() {
   return ocrWorker;
 }
 
+// Las capturas de celular suelen tener letra chica: al doble de tamaño el OCR confunde
+// mucho menos el "$" con un 5 o un 8.
+function prepararImagen(buf) {
+  try {
+    const img = nativeImage.createFromBuffer(buf);
+    const { width } = img.getSize();
+    if (!width || width >= 1400) return buf;
+    return img.resize({ width: width * 2, quality: 'best' }).toPNG();
+  } catch {
+    return buf;
+  }
+}
+
 ipcMain.handle('ocr:leer', async (_e, data) => {
   const w = await getOcr();
-  const { data: d } = await w.recognize(Buffer.from(data), {}, { blocks: true });
+  const { data: d } = await w.recognize(prepararImagen(Buffer.from(data)), {}, { blocks: true });
   return (d.blocks || []).flatMap((b) =>
     b.paragraphs.flatMap((p) =>
       p.lines.map((l) => ({

@@ -437,7 +437,7 @@ function revisarCapturas(cap) {
     const dudosas = filas.filter((f) => f.dudoso).length;
     return `
       ${cap.errores.map((e) => `<div class="notice warn">${esc(e)}</div>`).join('')}
-      <div class="notice info">Las capturas no muestran la hora: estos movimientos se cruzan por día, monto y titular, y no entran en la medición de tiempos.
+      <div class="notice info">Si las capturas no muestran la hora, esos movimientos se cruzan por día, monto y titular, y no entran en la medición de tiempos.
         Revisá lo leído antes de agregarlo; las filas resaltadas conviene mirarlas con la imagen.</div>
       <div class="row" style="align-items:flex-end;margin-bottom:12px">
         <label class="field"><span>Billetera / cuenta de estas capturas *</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
@@ -445,12 +445,13 @@ function revisarCapturas(cap) {
         <span class="spacer"></span>
         <div class="small muted">${filas.length} movimientos · ${cob.length} cobros ${money(sum(cob))} · ${pag.length} pagos ${money(sum(pag))}${dudosas ? ` · <b class="neg">${dudosas} a revisar</b>` : ''}</div>
       </div>
-      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th>Leyenda</th><th></th></tr></thead><tbody>
+      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Hora</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th>Leyenda</th><th></th></tr></thead><tbody>
       ${filas
         .map(
           (f) => `<tr class="${f.dudoso ? 'sel' : ''}" data-cap-row>
           <td class="small muted">${esc(f.imagen)}</td>
           <td><input data-cap="fecha" value="${esc(f.fecha)}" style="width:110px" /></td>
+          <td><input data-cap="hora" value="${esc(f.hora || '')}" placeholder="s/h" style="width:70px" /></td>
           <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" /></td>
           <td><select data-cap="tipo"><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobro (entra)</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pago (sale)</option></select></td>
           <td class="num"><input data-cap="monto" value="${esc(fmtMoney(f.monto))}" style="width:120px;text-align:right" /></td>
@@ -508,8 +509,8 @@ function revisarCapturas(cap) {
         cap.cuenta = ($('#cap-cuenta', el)?.value || cap.cuenta).trim();
         if (!cap.cuenta) return toast('Indicá a qué billetera o cuenta corresponden las capturas.', true);
         const filas = filasVisibles();
-        const malas = filas.filter((f) => !/^\d{2}\/\d{2}\/\d{4}$/.test(f.fecha) || !(f.monto > 0));
-        if (malas.length) return toast(`Hay ${malas.length} fila(s) sin fecha (dd/mm/aaaa) o monto válido. Corregilas o quitálas.`, true);
+        const malas = filas.filter((f) => !/^\d{2}\/\d{2}\/\d{4}$/.test(f.fecha) || !(f.monto > 0) || (f.hora && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(f.hora)));
+        if (malas.length) return toast(`Hay ${malas.length} fila(s) sin fecha (dd/mm/aaaa), con hora inválida (hh:mm) o sin monto válido. Corregilas o quitálas.`, true);
         if (!filas.length) return toast('No hay movimientos para agregar.', true);
         const nImg = new Set(filas.map((f) => f.imagen)).size;
         const fuente = tableToFuente(`Capturas: ${cap.cuenta} (${nImg} imágenes)`, { sheet: null, rows: filasATabla(filas, cap.cuenta) }, state.config);

@@ -170,3 +170,29 @@ test('leyendas: se omiten las habituales y se conservan las demás', async () =>
   assert.equal(fv.records.length, 1);
   assert.equal(fv.records[0].detalle, '');
 });
+
+test('formato "leyenda arriba, titular abajo" (Personal Pay)', () => {
+  const lines = [
+    linea(22, [[17, '13:17 ONYAL']]),
+    ...mov(152, '7', 'Enviaste dinero', '-$95.000,00', '> aMiriam Prueba Brun', '01/10'),
+    ...mov(242, '7', 'Te enviaron dinero', '+$1.191,00', 'deVictor Ejemplo Villa', '01/10'),
+    ...mov(332, '7', 'Te enviaron dinero', '+$5.000,00', '€ de Celeste Ficticia Gon...', '01/10'),
+    ...mov(422, '7', 'Pagaste con QR', '-$800,00', 'a Kiosco Inventado 14:32', '01/10'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY });
+  assert.deepEqual(
+    filas.map((f) => [f.nombre, f.truncado, f.tipo, f.monto, f.leyenda, f.hora, f.dudoso]),
+    [
+      ['Miriam Prueba Brun', false, 'PAGO', 95000, '', '', false],
+      ['Victor Ejemplo Villa', false, 'COBRO', 1191, '', '', false],
+      ['Celeste Ficticia Gon', true, 'COBRO', 5000, '', '', false],
+      ['Kiosco Inventado', false, 'PAGO', 800, 'Pagaste con QR', '14:32', false],
+    ]
+  );
+  // Con hora, el movimiento deja de ser "sin hora" y entra en los tiempos.
+  const fuente = tableToFuente('c', { sheet: null, rows: filasATabla(filas, 'Personal Pay') }, mergeConfig(null));
+  const kiosco = fuente.records.find((r) => r.persona === 'Kiosco Inventado');
+  assert.equal(kiosco.sinHora, false);
+  assert.equal(fmtDateTime(kiosco.ts), '01/10/2026 14:32:00');
+  assert.equal(fuente.records.find((r) => r.persona === 'Miriam Prueba Brun').sinHora, true);
+});
