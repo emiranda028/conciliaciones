@@ -329,7 +329,7 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
   addSheet(
     wb,
     'Pendientes',
-    [{ h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Nota', k: 'nota', w: 30 }],
+    [{ h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }],
     res.pendientes.map((p) => ({ estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
   );
 

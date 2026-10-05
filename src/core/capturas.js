@@ -21,8 +21,25 @@ function buscarMonto(text) {
 }
 
 const FECHA = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
-const COBRO_RE = /recibid|cobr|ingres|acredit|deposit|reintegr|devoluci/i;
-const PAGO_RE = /enviad|pagast|pago|retir|debit|extracci|transferiste/i;
+const COBRO_RE = /recibid|recibiste|te enviaron|te transfirieron|cobr|ingres|acredit|deposit|reintegr|devoluci/i;
+const PAGO_RE = /enviad|enviaste|pagast|pago|retir|debit|extracci|transferiste/i;
+
+// Leyendas habituales de transferencias: no se guardan porque no aportan nada.
+// Cualquier otra ("Pago con QR", "Rendimientos"…) queda en el movimiento para revisarla.
+export const LEYENDAS_OMITIDAS = ['Transferencia enviada', 'Transferencia recibida', 'Te enviaron dinero', 'Enviaste dinero'];
+const normLeyenda = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
+const OMITIDAS = new Set(LEYENDAS_OMITIDAS.map(normLeyenda));
+
+export function leyendaVisible(detalle) {
+  const t = String(detalle || '').replace(/\s+/g, ' ').trim();
+  return OMITIDAS.has(normLeyenda(t)) ? '' : t;
+}
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -99,7 +116,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
       tipo,
       monto,
       truncado,
-      detalle: detalle.replace(FECHA, '').trim(),
+      leyenda: leyendaVisible(detalle.replace(FECHA, '')),
       dudoso: dudoso || !fecha || !nombre || (l.confidence != null && l.confidence < 60),
       imagen,
     });
@@ -143,9 +160,9 @@ export function unirCapturas(listas) {
   return { filas: grupos.flat(), quitadas };
 }
 
-export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Origen: captura de pantalla'];
+export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Leyenda', 'Origen: captura de pantalla'];
 
 // Tabla que se guarda como fuente (así se puede guardar en el trabajo y volver a leer).
 export function filasATabla(filas, cuenta) {
-  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || ''])];
+  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda)])];
 }

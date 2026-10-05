@@ -495,7 +495,10 @@ const capturas = {
     const out = [];
     let skipped = 0;
     for (const row of rows.slice(1)) {
+      // Trabajos guardados con versiones anteriores no tienen la columna Leyenda.
+      const conLeyenda = norm(rows[0][6]) === 'leyenda';
       const [fecha, titular, op, monto, cuenta, imagen] = row;
+      const leyenda = conLeyenda ? cleanText(row[6]) : '';
       const day = parseDateTime(fecha);
       const m = parseNumber(monto);
       if (day == null || !m) {
@@ -514,7 +517,8 @@ const capturas = {
           truncado: /(\.\.\.|…)$/.test(nombre),
           tipo: norm(op).startsWith('cobro') ? 'COBRO' : 'PAGO',
           monto: m,
-          detalle: cleanText(imagen),
+          detalle: leyenda,
+          imagen: cleanText(imagen),
         })
       );
     }

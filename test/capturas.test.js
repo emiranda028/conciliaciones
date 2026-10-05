@@ -144,3 +144,29 @@ test('GANEMOS en tabla (hoja Consolidado)', () => {
     ]
   );
 });
+
+test('leyendas: se omiten las habituales y se conservan las demás', async () => {
+  const { leyendaVisible } = await import('../src/core/capturas.js');
+  for (const l of ['Transferencia enviada', 'TRANSFERENCIA RECIBIDA', 'Te enviaron dinero', 'Enviaste  dinero']) assert.equal(leyendaVisible(l), '');
+  assert.equal(leyendaVisible('Pago con QR'), 'Pago con QR');
+  const lines = [
+    ...mov(152, '7', 'Ana Prueba', '+$1.000,00', 'Te enviaron dinero', '28/09'),
+    ...mov(242, 'A', 'Beto Ejemplo', '$2.000,00', 'Enviaste dinero', '28/09'),
+    ...mov(332, 'A', 'Kiosco Ficticio', '$500,00', 'Pago con QR', '28/09'),
+    ...mov(422, '7', 'Banco Inventado', '+$12,50', 'Rendimientos', '28/09'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY });
+  assert.deepEqual(filas.map((f) => [f.nombre, f.tipo, f.leyenda]), [
+    ['Ana Prueba', 'COBRO', ''],
+    ['Beto Ejemplo', 'PAGO', ''],
+    ['Kiosco Ficticio', 'PAGO', 'Pago con QR'],
+    ['Banco Inventado', 'COBRO', 'Rendimientos'],
+  ]);
+  const fuente = tableToFuente('c', { sheet: null, rows: filasATabla(filas, 'X') }, mergeConfig(null));
+  assert.deepEqual(fuente.records.map((r) => r.detalle), ['', '', 'Pago con QR', 'Rendimientos']);
+  // Tabla guardada por la versión anterior (sin columna Leyenda): se sigue leyendo.
+  const vieja = [['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Origen: captura de pantalla'], ['28/09/2026', 'Ana Prueba', 'Cobro', 1000, 'X', 'a.png']];
+  const fv = tableToFuente('v', { sheet: null, rows: vieja }, mergeConfig(null));
+  assert.equal(fv.records.length, 1);
+  assert.equal(fv.records[0].detalle, '');
+});

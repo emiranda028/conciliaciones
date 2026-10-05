@@ -58,6 +58,9 @@ de "Mis movimientos" junto con los demás archivos:
 - Antes de agregarlos se muestra una tabla para revisar y corregir fecha, titular, operación y monto,
   y para indicar a qué billetera corresponden. Las filas resaltadas conviene mirarlas con la imagen
   (por ejemplo, cuando el OCR no vio el signo "$").
+- Se guarda la leyenda de cada movimiento ("Pago con QR", "Rendimientos"…) salvo las habituales de
+  transferencias: "Transferencia enviada", "Transferencia recibida", "Te enviaron dinero" y
+  "Enviaste dinero". La leyenda se ve en la revisión, en Pendientes y en el Excel exportado.
 - Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
   siguiente), se cuenta una sola vez.
 - **Las capturas no muestran la hora**, solo el día. Esos movimientos se cruzan por día, monto y

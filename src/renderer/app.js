@@ -445,7 +445,7 @@ function revisarCapturas(cap) {
         <span class="spacer"></span>
         <div class="small muted">${filas.length} movimientos · ${cob.length} cobros ${money(sum(cob))} · ${pag.length} pagos ${money(sum(pag))}${dudosas ? ` · <b class="neg">${dudosas} a revisar</b>` : ''}</div>
       </div>
-      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th></th></tr></thead><tbody>
+      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th>Leyenda</th><th></th></tr></thead><tbody>
       ${filas
         .map(
           (f) => `<tr class="${f.dudoso ? 'sel' : ''}" data-cap-row>
@@ -454,6 +454,7 @@ function revisarCapturas(cap) {
           <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" /></td>
           <td><select data-cap="tipo"><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobro (entra)</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pago (sale)</option></select></td>
           <td class="num"><input data-cap="monto" value="${esc(fmtMoney(f.monto))}" style="width:120px;text-align:right" /></td>
+          <td><input data-cap="leyenda" value="${esc(f.leyenda || '')}" placeholder="—" style="width:170px" /></td>
           <td><button class="btn sm danger" data-cap-borrar>Quitar</button></td></tr>`
         )
         .join('')}
@@ -629,7 +630,7 @@ function viewConciliacion() {
         <td class="num">${lines(p, (r) => money(signed(r)))}</td>
         <td class="nowrap">${lines(w, (r) => esc(horaDe(r)))}</td>
         <td>${lines(w, (r) => `${esc(r.cuenta)} <span class="muted small">${esc(r.origen)}</span>`)}</td>
-        <td>${lines(w, (r) => esc(r.persona))}</td>
+        <td>${lines(w, (r) => `${esc(r.persona)}${r.sinHora && r.detalle ? ` <span class="muted small">(${esc(r.detalle)})</span>` : ''}`)}</td>
         <td class="num">${lines(w, (r) => money(signed(r)))}</td>
         <td class="num ${m.diferencia ? 'neg' : ''}">${m.diferencia ? money(m.diferencia) : ''}</td>
         <td class="nowrap">${esc(fmtDuration(m.demora))}</td>
@@ -715,7 +716,7 @@ function pendTable(list, lado, hints) {
         <td><input type="checkbox" data-pend="${esc(r.id)}" ${sel ? 'checked' : ''} /></td>
         <td class="nowrap">${esc(horaDe(r))}<div class="muted small">${esc(fmtDate(r.ts))}</div></td>
         <td>${tipoTxt(r.tipo)}</td>
-        <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}</div></td>
+        <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}${r.sinHora && r.detalle ? ` · <b>${esc(r.detalle)}</b>` : ''}</div></td>
         <td class="num">${money(signed(r))}</td>
         <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}
           ${man ? `<div><button class="link small" data-quitar-estado="${esc(r.id)}">Quitar marca</button></div>` : ''}</td>
