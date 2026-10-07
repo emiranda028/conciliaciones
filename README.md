@@ -50,8 +50,12 @@ agentes, donde también se ven los agentes encontrados en los paneles cargados p
 ### Capturas de pantalla
 
 Algunas billeteras solo permiten ver los movimientos en el celular. Se pueden arrastrar las capturas
-de "Mis movimientos" junto con los demás archivos:
+de "Mis movimientos" junto con los demás archivos, o usar los botones de la tarjeta de capturas:
 
+- **Varias imágenes a la vez:** con **Elegir capturas…** se seleccionan muchas juntas (Ctrl+clic,
+  Shift+clic o Ctrl+A en la ventana de Windows). Con **Elegir carpeta de capturas…** se toman todas
+  las imágenes de una carpeta, por ejemplo una carpeta por turno. Desde la revisión, **Agregar más
+  imágenes…** suma otras al mismo lote, y toman el turno que ya se eligió para el lote.
 - El texto se lee con OCR (Tesseract, en español) **en la misma computadora y sin conexión**. El
   lector y el idioma viajan dentro del `.exe`. La primera lectura tarda unos segundos; después,
   alrededor de 1 segundo por imagen.

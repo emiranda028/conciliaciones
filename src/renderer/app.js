@@ -294,6 +294,11 @@ function viewCargar() {
           <div class="muted">También capturas de pantalla (.png, .jpg) de "Mis movimientos" de las billeteras.</div>
           <input type="file" id="file-in" multiple accept=".xlsx,.xlsm,.csv,.txt,.png,.jpg,.jpeg,.webp,.bmp" hidden />
         </label>
+        <div class="row" style="margin-top:12px">
+          <label class="btn">Elegir capturas…<input type="file" id="cap-in" multiple accept=".png,.jpg,.jpeg,.webp,.bmp" hidden /></label>
+          <label class="btn">Elegir carpeta de capturas…<input type="file" id="cap-dir" webkitdirectory multiple hidden /></label>
+          <span class="muted small">Se pueden elegir muchas a la vez: Ctrl+clic o Shift+clic en la ventana, o Ctrl+A para todas. Con "carpeta" se toman todas las imágenes de esa carpeta (por ejemplo, una carpeta por turno).</span>
+        </div>
       </div>
       <div class="card">
         <h2>2. Pegar desde el panel</h2>
@@ -364,6 +369,15 @@ afterRender.cargar = () => {
     cargarArchivos([...e.dataTransfer.files]);
   });
   input.addEventListener('change', () => cargarArchivos([...input.files]));
+  for (const id of ['#cap-in', '#cap-dir']) {
+    const el = $(id);
+    el.addEventListener('change', () => {
+      const imgs = [...el.files].filter((f) => ES_IMAGEN.test(f.name));
+      if (!imgs.length) return toast('No se encontraron imágenes (.png, .jpg) en lo elegido.', true);
+      leerCapturas(imgs);
+      el.value = '';
+    });
+  }
 };
 
 const ES_IMAGEN = /\.(png|jpe?g|webp|bmp)$/i;
@@ -393,22 +407,12 @@ async function cargarArchivos(files) {
 // ---------------------------------------------------------------------------
 // Capturas de pantalla: OCR local, revisión y alta como fuente
 
-async function leerCapturas(files) {
-  if (!api.leerCaptura) {
-    toast('La lectura de capturas solo está disponible en la aplicación de escritorio.', true);
-    return;
-  }
+// Lee con OCR las imágenes y agrega sus movimientos al lote (cap). Devuelve las filas nuevas.
+async function ocrArchivos(files, cap, progreso) {
   files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
-  const cap = { listas: [], unir: true, cuenta: state.config.ultimaCuentaCaptura || '', errores: [] };
-  const close = modal({
-    title: `Leyendo ${files.length} captura(s)…`,
-    persistente: true,
-    body: '<div class="empty"><div class="big" id="cap-prog">Preparando el lector…</div>La primera lectura tarda unos segundos más.</div>',
-    foot: '<span class="muted small">Todo se procesa en esta computadora, sin conexión.</span>',
-  });
+  const nuevas = [];
   for (let i = 0; i < files.length; i += 1) {
-    const prog = $('#cap-prog');
-    if (prog) prog.textContent = `Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`;
+    progreso(`Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`);
     try {
       const res = await api.leerCaptura(new Uint8Array(await files[i].arrayBuffer()));
       const lines = Array.isArray(res) ? res : res.lines;
@@ -421,13 +425,35 @@ async function leerCapturas(files) {
         filas = c ? [c] : [];
       } else filas = parsearCaptura(lines, { imagen: files[i].name, hoy });
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
+      // Las capturas sin hora toman el turno elegido para el lote.
+      for (const f of filas) if (!f.hora && cap.turnoTodas) f.turno = cap.turnoTodas;
       cap.listas.push(filas);
+      nuevas.push(...filas);
     } catch (e) {
       cap.errores.push(`${files[i].name}: ${e.message || e}`);
     }
   }
-  close();
   resolverComprobantes(cap.listas.flat(), cap.cuenta);
+  return nuevas;
+}
+
+async function leerCapturas(files) {
+  if (!api.leerCaptura) {
+    toast('La lectura de capturas solo está disponible en la aplicación de escritorio.', true);
+    return;
+  }
+  const cap = { listas: [], unir: true, cuenta: state.config.ultimaCuentaCaptura || '', errores: [], turnoTodas: '' };
+  const close = modal({
+    title: `Leyendo ${files.length} captura(s)…`,
+    persistente: true,
+    body: '<div class="empty"><div class="big" id="cap-prog">Preparando el lector…</div>La primera lectura tarda unos segundos más.</div>',
+    foot: '<span class="muted small">Todo se procesa en esta computadora, sin conexión.</span>',
+  });
+  await ocrArchivos(files, cap, (txt) => {
+    const prog = $('#cap-prog');
+    if (prog) prog.textContent = txt;
+  });
+  close();
   revisarCapturas(cap);
 }
 
@@ -452,7 +478,7 @@ function revisarCapturas(cap) {
         <label class="field"><span>Billetera / cuenta de estas capturas *</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
         <label class="field"><span>Turno de estas capturas</span><select id="cap-turno-todas">
           <option value="">Elegir para todas…</option><option value="__ninguno">Sin turno</option>
-          ${state.config.turnos.map((t) => `<option value="${esc(t.nombre)}">${esc(t.nombre)} (${esc(t.desde)} a ${esc(t.hasta)})</option>`).join('')}
+          ${state.config.turnos.map((t) => `<option value="${esc(t.nombre)}" ${cap.turnoTodas === t.nombre ? 'selected' : ''}>${esc(t.nombre)} (${esc(t.desde)} a ${esc(t.hasta)})</option>`).join('')}
         </select></label>
         <label class="row small"><input type="checkbox" id="cap-unir" ${cap.unir ? 'checked' : ''} /> Quitar movimientos repetidos entre capturas que se superponen${quitadas ? ` (${quitadas} quitados)` : ''}</label>
         <span class="spacer"></span>
@@ -487,9 +513,26 @@ function revisarCapturas(cap) {
     title: 'Revisar movimientos leídos de las capturas',
     persistente: true,
     body: `<div id="cap-body">${cuerpo()}</div>`,
-    foot: '<button class="btn" data-close>Cancelar</button><button class="btn primary" id="cap-ok">Agregar a la conciliación</button>',
+    foot: `<label class="btn" style="margin-right:auto">Agregar más imágenes…<input type="file" id="cap-mas" multiple accept=".png,.jpg,.jpeg,.webp,.bmp" hidden /></label>
+      <button class="btn" data-close>Cancelar</button><button class="btn primary" id="cap-ok">Agregar a la conciliación</button>`,
     onMount(el, close) {
       const body = $('#cap-body', el);
+      const mas = $('#cap-mas', el);
+      mas.addEventListener('change', async () => {
+        const imgs = [...mas.files].filter((f) => ES_IMAGEN.test(f.name));
+        mas.value = '';
+        if (!imgs.length) return;
+        cap.cuenta = ($('#cap-cuenta', el)?.value || cap.cuenta).trim();
+        $('#cap-ok', el).disabled = true;
+        body.innerHTML = '<div class="empty"><div class="big" id="cap-prog2">Leyendo…</div></div>';
+        const nuevas = await ocrArchivos(imgs, cap, (txt) => {
+          const prog = $('#cap-prog2', el);
+          if (prog) prog.textContent = txt;
+        });
+        $('#cap-ok', el).disabled = false;
+        redraw();
+        toast(`${nuevas.length} movimientos agregados de ${imgs.length} imagen(es).`);
+      });
       const filasVisibles = () => capFilas(cap).filas;
       const redraw = () => {
         const top = $('.scroll', body)?.scrollTop || 0;
@@ -513,6 +556,7 @@ function revisarCapturas(cap) {
         if (t.id === 'cap-turno-todas') {
           if (!t.value) return;
           const turno = t.value === '__ninguno' ? '' : t.value;
+          cap.turnoTodas = turno;
           for (const f of filasVisibles()) if (!f.hora) f.turno = turno;
           redraw();
           return;
