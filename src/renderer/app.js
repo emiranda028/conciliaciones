@@ -19,7 +19,7 @@ import {
   agentesDePaneles,
   DEFAULT_LINEAS,
 } from '../core/session.js';
-import { parsearCaptura, unirCapturas, filasATabla } from '../core/capturas.js';
+import { parsearCaptura, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { exportarExcel, TRAMOS, turnoDe } from '../core/report.js';
 import { ESTADOS, DEFAULT_PARAMS } from '../core/matcher.js';
@@ -410,10 +410,16 @@ async function leerCapturas(files) {
     const prog = $('#cap-prog');
     if (prog) prog.textContent = `Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`;
     try {
-      const lines = await api.leerCaptura(new Uint8Array(await files[i].arrayBuffer()));
+      const res = await api.leerCaptura(new Uint8Array(await files[i].arrayBuffer()));
+      const lines = Array.isArray(res) ? res : res.lines;
+      const lines2 = Array.isArray(res) ? [] : res.lines2 || [];
       // "Hoy"/"Ayer" y el año se toman de la fecha del archivo (cuando se sacó la captura), en hora argentina.
       const hoy = new Date((files[i].lastModified || Date.now()) - 3 * 3600000);
-      const filas = parsearCaptura(lines, { imagen: files[i].name, hoy });
+      let filas;
+      if (esComprobante(lines.concat(lines2))) {
+        const c = parsearComprobante(lines, lines2, { imagen: files[i].name, hoy });
+        filas = c ? [c] : [];
+      } else filas = parsearCaptura(lines, { imagen: files[i].name, hoy });
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
       cap.listas.push(filas);
     } catch (e) {
@@ -421,6 +427,7 @@ async function leerCapturas(files) {
     }
   }
   close();
+  resolverComprobantes(cap.listas.flat(), cap.cuenta);
   revisarCapturas(cap);
 }
 
@@ -465,7 +472,9 @@ function revisarCapturas(cap) {
                   .map((t) => `<option ${f.turno === t.nombre ? 'selected' : ''}>${esc(t.nombre)}</option>`)
                   .join('')}</select>`
           }</td>
-          <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" /></td>
+          <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" />${
+            f.comprobante ? `<div class="muted small">Comprobante · ${esc(f.origen)} → ${esc(f.destino)}${f.ref ? ` · Op. ${esc(f.ref)}` : ''}</div>` : ''
+          }</td>
           <td><select data-cap="tipo"><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobro (entra)</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pago (sale)</option></select></td>
           <td class="num"><input data-cap="monto" value="${esc(fmtMoney(f.monto))}" style="width:120px;text-align:right" /></td>
           <td><input data-cap="leyenda" value="${esc(f.leyenda || '')}" placeholder="—" style="width:170px" /></td>
@@ -497,6 +506,8 @@ function revisarCapturas(cap) {
         }
         if (t.id === 'cap-cuenta') {
           cap.cuenta = t.value.trim();
+          // El nombre de la cuenta puede indicar el titular de los comprobantes.
+          if (resolverComprobantes(cap.listas.flat(), cap.cuenta)) redraw();
           return;
         }
         if (t.id === 'cap-turno-todas') {

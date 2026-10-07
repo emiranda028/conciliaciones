@@ -69,6 +69,11 @@ de "Mis movimientos" junto con los demás archivos:
 - Mercado Pago: lee los encabezados de fecha ("Hoy", "Ayer", "Lunes 5 de octubre"), la hora de cada
   movimiento y los montos sin centavos. "Hoy" y "Ayer" se calculan con la fecha del archivo de la
   captura. Si los centavos chiquitos no se pueden leer, la fila queda para revisar.
+- **Comprobantes de transferencia de Mercado Pago** (una imagen por operación): se leen fecha y hora,
+  monto, origen, destino, motivo y número de operación. El titular de la cuenta se deduce porque se
+  repite en los comprobantes (o porque figura en el nombre de la cuenta ingresado): lo que le llega es
+  cobro y lo que envía es pago. Con un solo comprobante y sin titular conocido, la fila queda para
+  revisar. El número de operación evita cargar dos veces el mismo comprobante.
 - **Turno:** en la revisión se puede asignar un turno a todas las capturas o a cada fila. Para los
   movimientos sin hora, el cruce se limita a las horas de ese turno en vez de todo el día, y el turno
   aparece en Pendientes y en el Excel. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
@@ -106,7 +111,7 @@ carpeta del usuario de Windows.
 
 ## Seguridad y privacidad
 
-- La app no usa la red: cualquier conexión saliente está bloqueada desde el proceso principal y además por la política de contenido (CSP).
+- La app no usa la red: cualquier conexión saliente está bloqueada desde el proceso principal y además por la política de contenido (CSP). También se desactiva el tráfico de fondo de Chromium (actualización de componentes y similares).
 - El código de la interfaz no tiene acceso a Node. Solo se exponen las funciones para leer y guardar la configuración y para abrir y guardar archivos.
 - El código se entrega empaquetado (asar), minificado y ofuscado, sin herramientas de desarrollo ni menú.
   La ofuscación dificulta leer y modificar el código, pero no es un cifrado: alguien con tiempo y

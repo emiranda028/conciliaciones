@@ -6,6 +6,11 @@ const fs = require('node:fs');
 
 const DEV = process.env.CONCILIADOR_DEV === '1';
 
+// Sin tráfico de fondo de Chromium (actualización de componentes, chequeos de red, etc.).
+for (const sw of ['disable-background-networking', 'disable-component-update', 'disable-domain-reliability', 'no-pings']) {
+  app.commandLine.appendSwitch(sw);
+}
+
 // En la versión portable (pendrive) los datos quedan junto al .exe.
 function dataDir() {
   const base = process.env.PORTABLE_EXECUTABLE_DIR;
@@ -118,7 +123,23 @@ function prepararImagen(buf) {
 
 ipcMain.handle('ocr:leer', async (_e, data) => {
   const w = await getOcr();
-  const { data: d } = await w.recognize(prepararImagen(Buffer.from(data)), {}, { blocks: true });
+  const img = prepararImagen(Buffer.from(data));
+  const { data: d } = await w.recognize(img, {}, { blocks: true });
+  const lines = lineasOcr(d);
+  // Comprobantes (un movimiento por imagen, letra grande): una segunda lectura con
+  // segmentación automática encuentra el monto que la lectura por bloque a veces saltea.
+  const texto = lines.map((l) => l.text).join('\n');
+  if (!/comprobante|origen y destino|de operaci/i.test(texto)) return lines;
+  try {
+    await w.setParameters({ tessedit_pageseg_mode: '3' });
+    const { data: d2 } = await w.recognize(img, {}, { blocks: true });
+    return { lines, lines2: lineasOcr(d2) };
+  } finally {
+    await w.setParameters({ tessedit_pageseg_mode: '6' });
+  }
+});
+
+function lineasOcr(d) {
   return (d.blocks || []).flatMap((b) =>
     b.paragraphs.flatMap((p) =>
       p.lines.map((l) => ({
@@ -129,7 +150,7 @@ ipcMain.handle('ocr:leer', async (_e, data) => {
       }))
     )
   );
-});
+}
 
 app.on('before-quit', () => {
   if (ocrWorker) ocrWorker.terminate().catch(() => {});

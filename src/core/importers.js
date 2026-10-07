@@ -498,6 +498,7 @@ const capturas = {
     const cols = rows[0].map(norm);
     const col = (n, def) => (cols.indexOf(n) >= 0 ? cols.indexOf(n) : def);
     const iTurno = col('turno', -1);
+    const iRef = col('referencia', -1);
     const [iF, iT, iO, iM, iC, iI, iL, iH] = [col('fecha', 0), col('titular', 1), col('operacion', 2), col('monto', 3), col('cuenta', 4), col('imagen', 5), col('leyenda', -1), col('hora', -1)];
     for (const row of rows.slice(1)) {
       const day = parseDateTime(row[iF]);
@@ -524,6 +525,7 @@ const capturas = {
           monto: m,
           detalle: iL >= 0 ? cleanText(row[iL]) : '',
           turno: tod == null && iTurno >= 0 ? cleanText(row[iTurno]) : '',
+          ref: iRef >= 0 ? cleanText(row[iRef]) : '',
           imagen: cleanText(row[iI]),
         })
       );

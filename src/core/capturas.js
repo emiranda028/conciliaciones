@@ -58,6 +58,37 @@ function esEncabezadoFecha(text) {
   return /^(hoy|ayer|((lunes|martes|miercoles|jueves|viernes|sabado|domingo),?\s*)?\d{1,2}\s*(de\s+)?[a-z]{3,10}\.?(\s+(de\s+)?\d{4})?|\d{1,2}\/\d{1,2}(\/\d{2,4})?)$/.test(t);
 }
 
+// Mes escrito, tolerando errores del OCR ("0ctubre", "o0ctubre", "ju1io", "setiembre").
+const NOMBRES_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function distancia(a, b) {
+  const dp = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const tmp = dp[j];
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return dp[b.length];
+}
+function mesDeTexto(tok) {
+  const t = String(tok || '')
+    .toLowerCase()
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'l')
+    .replace(/[^a-z]/g, '');
+  if (t.length < 3) return null;
+  if (MESES[t.slice(0, 3)] && (t.length <= 4 || NOMBRES_MES.some((n) => distancia(t, n) <= 2))) return MESES[t.slice(0, 3)];
+  let mejor = null;
+  NOMBRES_MES.forEach((n, i) => {
+    const d = distancia(t, n);
+    if (d <= 2 && (!mejor || d < mejor.d)) mejor = { d, mes: i + 1 };
+  });
+  return mejor ? mejor.mes : null;
+}
+
 function fechaEnTexto(text, hoy) {
   const t = String(text || '')
     .normalize('NFD')
@@ -204,7 +235,138 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
 }
 
 export function claveFila(f) {
+  // Con número de operación (comprobantes) solo se une la misma operación.
+  if (f.ref) return `ref|${f.ref}`;
   return `${f.fecha}|${f.tipo}|${f.monto}|${nameTokens(f.nombre).join(' ')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Comprobante de transferencia de Mercado Pago (un movimiento por imagen):
+//   Comprobante de transferencia / 6/octubre/2026 a las 18:49. / $ 22.500 / Motivo: Varios /
+//   Origen y destino / Carlos … / Mercado Pago / CVU … / Guido … / … / N.º de operación … / 181758083051
+
+const NO_NOMBRE = /mercado ?pago|cvu|cbu|cuit|cuil|alias|banco|brubank|uala|naranja|personal pay|^\W*$/i;
+
+export function esComprobante(lines) {
+  const t = lines.map((l) => l.text || '').join('\n');
+  return /comprobante/i.test(t) && /origen y destino|de operaci/i.test(t);
+}
+
+function nombreComprobante(txt) {
+  const toks = String(txt || '')
+    .replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ'., ]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  // Restos del ícono a la izquierda ("G", "<", "GS", "EG").
+  while (toks.length > 2 && /^[A-ZÁÉÍÓÚÑ]{1,3}$/.test(toks[0])) toks.shift();
+  return toks.join(' ');
+}
+
+// lines: renglones de la primera lectura; lines2: de la segunda (segmentación automática).
+export function parsearComprobante(lines, lines2 = [], { hoy = new Date(), imagen = '' } = {}) {
+  const pasadas = [lines, lines2].map((ls) => ls.map((l) => String(l.text || '').replace(/\s+/g, ' ').trim()).filter(Boolean));
+  const buscar = (fn) => {
+    for (const ts of pasadas) {
+      const r = fn(ts);
+      if (r) return r;
+    }
+    return null;
+  };
+  const fh = buscar((ts) => {
+    for (const t of ts) {
+      const m = t
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .match(/(\d{1,2})\s*\/\s*([a-z0-9]{2,12})\s*\/\s*(\d{4})(?:\s*a\s*las\s*(\d{1,2})[:.](\d{2}))?/i);
+      if (!m) continue;
+      const mes = /^\d+$/.test(m[2]) ? +m[2] : mesDeTexto(m[2]);
+      if (!mes) continue;
+      return { fecha: inferirFecha(+m[1], mes, m[3], hoy), hora: m[4] ? `${pad(m[4])}:${m[5]}` : '' };
+    }
+    return null;
+  });
+  // Monto: el renglón que es solo "$ 22.500" (la publicidad de abajo dice "Transferí $ 3.00").
+  const monto = buscar((ts) => {
+    for (const t of ts) {
+      const m = t.match(/^[+\-−–]?\s*\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*$/);
+      if (m) return parseNumber(m[1]);
+    }
+    return null;
+  });
+  const motivo = buscar((ts) => {
+    for (const t of ts) {
+      const m = t.match(/motivo:?\s*(.+)$/i);
+      if (m) return m[1].trim();
+    }
+    return null;
+  });
+  const partes = buscar((ts) => {
+    const i = ts.findIndex((t) => /origen y destino/i.test(t));
+    if (i < 0) return null;
+    const nombres = [];
+    for (let j = i + 1; j < ts.length && nombres.length < 2; j += 1) {
+      if (/operaci/i.test(ts[j])) break;
+      if (NO_NOMBRE.test(ts[j]) || /\d{4,}/.test(ts[j])) continue;
+      const n = nombreComprobante(ts[j]);
+      if (n.split(' ').length >= 2) nombres.push(n);
+    }
+    return nombres.length === 2 ? { origen: nombres[0], destino: nombres[1] } : null;
+  });
+  const ref = buscar((ts) => {
+    const i = ts.findIndex((t) => /operaci/i.test(t));
+    for (const t of i >= 0 ? ts.slice(i, i + 3) : ts) {
+      const m = t.match(/\b(\d{9,16})\b/);
+      if (m) return m[1];
+    }
+    return null;
+  });
+  if (!monto && !partes) return null;
+  return {
+    comprobante: true,
+    fecha: fh?.fecha || '',
+    hora: fh?.hora || '',
+    nombre: partes?.origen || '',
+    origen: partes?.origen || '',
+    destino: partes?.destino || '',
+    tipo: 'COBRO',
+    monto: monto || 0,
+    truncado: false,
+    leyenda: motivo && !/^varios$/i.test(motivo) ? `Motivo: ${motivo}` : '',
+    ref: ref || '',
+    dudoso: !fh?.fecha || !monto || !partes || !ref,
+    imagen,
+  };
+}
+
+// Cobro o pago según quién es el titular de la cuenta: el nombre que se repite como origen
+// o destino en los comprobantes, o el que figura en el nombre de la cuenta ingresado.
+export function resolverComprobantes(filas, cuenta = '') {
+  const comps = filas.filter((f) => f.comprobante && f.origen && f.destino);
+  if (!comps.length) return null;
+  const k = (n) => nameTokens(n).join(' ');
+  const cuentaK = k(cuenta);
+  const cuenta2 = new Map();
+  for (const f of comps) for (const n of [f.origen, f.destino]) cuenta2.set(k(n), (cuenta2.get(k(n)) || 0) + 1);
+  let titular = [...cuenta2.entries()].find(([n]) => n && cuentaK.includes(n))?.[0];
+  if (!titular) {
+    const [n, veces] = [...cuenta2.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (veces >= 2) titular = n;
+  }
+  for (const f of comps) {
+    if (titular && k(f.destino) === titular) {
+      f.tipo = 'COBRO';
+      f.nombre = f.origen;
+    } else if (titular && k(f.origen) === titular) {
+      f.tipo = 'PAGO';
+      f.nombre = f.destino;
+    } else {
+      f.tipo = 'COBRO';
+      f.nombre = f.origen;
+      f.dudoso = true;
+    }
+  }
+  return titular || null;
 }
 
 // Une capturas consecutivas: si el final de una coincide con el principio de otra
@@ -239,9 +401,9 @@ export function unirCapturas(listas) {
   return { filas: grupos.flat(), quitadas };
 }
 
-export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Leyenda', 'Hora', 'Turno', 'Origen: captura de pantalla'];
+export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuenta', 'Imagen', 'Leyenda', 'Hora', 'Turno', 'Referencia', 'Origen: captura de pantalla'];
 
 // Tabla que se guarda como fuente (así se puede guardar en el trabajo y volver a leer).
 export function filasATabla(filas, cuenta) {
-  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || '', f.hora ? '' : f.turno || ''])];
+  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || '', f.hora ? '' : f.turno || '', f.ref || ''])];
 }

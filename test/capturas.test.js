@@ -265,3 +265,40 @@ test('iniciales del avatar no quedan en el nombre', () => {
   const filas = parsearCaptura(lines, { hoy: HOY });
   assert.deepEqual(filas.map((f) => f.nombre), ['Juan Prueba Perez', 'Pedro Ejemplo Ruiz', 'Al Fredo Ejemplo']);
 });
+
+test('comprobante de transferencia de Mercado Pago', async () => {
+  const { esComprobante, parsearComprobante, resolverComprobantes } = await import('../src/core/capturas.js');
+  const L = (arr) => arr.map((text) => ({ text }));
+  // Primera lectura (por bloque): ruido en el mes y sin el monto grande.
+  const p1 = L(['mercado', 'pago', 'Comprobante de transferencia', '6/0ctubre/2026 a las 18:49.', 'Motivo: Varios', 'Origen y destino',
+    'G Ana Prueba Ficticia', 'Mercado Pago', 'CVuU: 0000003100000000000001', 'CUIT/CUIL: 20-00000000-1',
+    '< Empresa Ejemplo', 'Mercado Pago', 'CVU: 0000003100000000000002', 'N.* de operación de Mercado Pago', '181758083051',
+    'transferencias por Tansfris 2.00']);
+  // Segunda lectura (segmentación automática): trae el monto.
+  const p2 = L(['Comprobante de transferencia', '$ 22.500', 'Origen y destino', 'GS Ana Prueba Ficticia', 'EG Empresa Ejemplo', 'Transferi $3.00']);
+  assert.ok(esComprobante(p1));
+  const a = parsearComprobante(p1, p2, { hoy: HOY, imagen: 'a.jpg' });
+  assert.deepEqual([a.fecha, a.hora, a.monto, a.origen, a.destino, a.ref, a.dudoso], ['06/10/2026', '18:49', 22500, 'Ana Prueba Ficticia', 'Empresa Ejemplo', '181758083051', false]);
+  const b = parsearComprobante(
+    L(['Comprobante de transferencia', '5/octubre/2026 a las 10:00.', '$ 9.000', 'Origen y destino', 'Empresa Ejemplo', 'CVU: 1', 'Pedro Inventado', 'N.º de operación', '181700000000']),
+    [],
+    { hoy: HOY }
+  );
+  // El titular es el nombre que se repite: lo recibido es cobro y lo enviado, pago.
+  assert.equal(resolverComprobantes([a, b], 'Mercado Pago'), 'empresa ejemplo');
+  assert.deepEqual([a.tipo, a.nombre, b.tipo, b.nombre], ['COBRO', 'Ana Prueba Ficticia', 'PAGO', 'Pedro Inventado']);
+  // Un solo comprobante: sin titular conocido queda para revisar, salvo que la cuenta lo nombre.
+  const c = parsearComprobante(p1, p2, { hoy: HOY });
+  resolverComprobantes([c], '');
+  assert.equal(c.dudoso, true);
+  const d = parsearComprobante(p1, p2, { hoy: HOY });
+  resolverComprobantes([d], 'MP Empresa Ejemplo');
+  assert.deepEqual([d.tipo, d.dudoso], ['COBRO', false]);
+  // El número de operación evita contar dos veces el mismo comprobante y queda como referencia.
+  assert.equal(unirCapturas([[a], [{ ...a }]]).filas.length, 1);
+  const fuente = tableToFuente('c', { sheet: null, rows: filasATabla([a, b], 'MP') }, mergeConfig(null));
+  assert.deepEqual(fuente.records.map((r) => [r.ref, r.sinHora, fmtDateTime(r.ts)]), [
+    ['181758083051', false, '06/10/2026 18:49:00'],
+    ['181700000000', false, '05/10/2026 10:00:00'],
+  ]);
+});
