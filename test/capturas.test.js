@@ -196,3 +196,72 @@ test('formato "leyenda arriba, titular abajo" (Personal Pay)', () => {
   assert.equal(fmtDateTime(kiosco.ts), '01/10/2026 14:32:00');
   assert.equal(fuente.records.find((r) => r.persona === 'Miriam Prueba Brun').sinHora, true);
 });
+
+test('Mercado Pago: encabezados "Hoy/Ayer/5 de octubre", hora por movimiento y centavos', () => {
+  const sec = (y, t) => linea(y, [[24, t]]);
+  const lines = [
+    linea(20, [[24, 'Actividad']]),
+    sec(60, 'Hoy'),
+    ...mov(90, 'J', 'Juan Prueba Perez', '+ $ 5.000', 'Transferencia recibida', '14:32'),
+    ...mov(170, 'K', 'Kiosco Ficticio', '- $ 1.250 50', 'Pago con QR', '11:05'),
+    sec(250, 'Ayer'),
+    ...mov(280, 'M', 'Maria Inventada Gomez', '- $ 20.000', 'Transferencia enviada', '22:40'),
+    sec(360, 'Lunes 5 de octubre'),
+    ...mov(390, 'p', 'Pedro Ejemplo Ruiz', '+ $ 3.500', 'Te transfirió dinero', '09:15'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 7, 12)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.tipo, f.monto, f.leyenda, f.dudoso]),
+    [
+      ['07/10/2026', '14:32', 'Juan Prueba Perez', 'COBRO', 5000, '', false],
+      ['07/10/2026', '11:05', 'Kiosco Ficticio', 'PAGO', 1250.5, 'Pago con QR', true],
+      ['06/10/2026', '22:40', 'Maria Inventada Gomez', 'PAGO', 20000, '', false],
+      ['05/10/2026', '09:15', 'Pedro Ejemplo Ruiz', 'COBRO', 3500, 'Te transfirió dinero', false],
+    ]
+  );
+});
+
+test('turno de capturas sin hora: el cruce se limita a las horas del turno', async () => {
+  const { dataset, mergeConfig: mc } = await import('../src/core/session.js');
+  const config = mc(null);
+  assert.deepEqual(config.turnos.map((t) => t.nombre), ['Turno 1', 'Turno 2', 'Turno 3']);
+  // Configuraciones con los turnos de fábrica viejos pasan a los nuevos; las editadas se respetan.
+  const viejos = [
+    { nombre: 'Turno 00 a 06', desde: '00:00', hasta: '06:00' },
+    { nombre: 'Turno 06 a 12', desde: '06:00', hasta: '12:00' },
+    { nombre: 'Turno 12 a 18', desde: '12:00', hasta: '18:00' },
+    { nombre: 'Turno 18 a 24', desde: '18:00', hasta: '24:00' },
+  ];
+  assert.equal(mc({ turnos: viejos }).turnos[0].nombre, 'Turno 1');
+  assert.equal(mc({ turnos: [{ nombre: 'Mañana', desde: '06:00', hasta: '18:00' }] }).turnos[0].nombre, 'Mañana');
+
+  const filas = [
+    { fecha: '28/09/2026', nombre: 'Ana Prueba', tipo: 'COBRO', monto: 3000, turno: 'Turno 2' },
+    { fecha: '28/09/2026', nombre: 'Beto Ejemplo', tipo: 'COBRO', monto: 4000, turno: 'Turno 3' },
+  ];
+  const fuente = tableToFuente('c', { sheet: null, rows: filasATabla(filas, 'MP') }, config);
+  const { billetera } = dataset([fuente], config);
+  const ana = billetera.find((r) => r.persona === 'Ana Prueba');
+  assert.equal(ana.turno, 'Turno 2');
+  assert.equal(fmtDateTime(ana.ts), '28/09/2026 18:00:00');
+  const P = (h, monto, persona) => ({ id: `${persona}${h}`, lado: 'panel', origen: 'BETS', cuenta: 'Ag', persona, ts: parseDateTime(`28/09/2026, ${h}`), tipo: 'COBRO', monto });
+  // Mismo monto a las 09:00 (turno 1) y a las 16:00 (turno 2): con turno 2 se elige el de las 16:00.
+  let r = conciliar([P('09:00:00', 3000, 'x1'), P('16:00:00', 3000, 'x2')], billetera.filter((w) => w.persona === 'Ana Prueba'));
+  assert.equal(r.matches.length, 1);
+  assert.equal(r.matches[0].panel[0].persona, 'x2');
+  // Turno 3 (22 a 06): sirve tanto de madrugada como de noche del mismo día calendario.
+  r = conciliar([P('02:30:00', 4000, 'z1')], billetera.filter((w) => w.persona === 'Beto Ejemplo'));
+  assert.equal(r.matches.length, 1);
+  r = conciliar([P('15:00:00', 4000, 'z2')], billetera.filter((w) => w.persona === 'Beto Ejemplo'));
+  assert.equal(r.matches.length, 0);
+});
+
+test('iniciales del avatar no quedan en el nombre', () => {
+  const lines = [
+    ...mov(90, null, 'JP Juan Prueba Perez', '+ $ 5.000', 'Transferencia recibida', '14:32'),
+    ...mov(170, null, 'Pp Pedro Ejemplo Ruiz', '+ $ 3.500', 'Te transfirió dinero', '09:15'),
+    ...mov(250, null, 'Al Fredo Ejemplo', '+ $ 1.000', 'Transferencia recibida', '08:00'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY });
+  assert.deepEqual(filas.map((f) => f.nombre), ['Juan Prueba Perez', 'Pedro Ejemplo Ruiz', 'Al Fredo Ejemplo']);
+});

@@ -497,6 +497,7 @@ const capturas = {
     // Columnas por nombre: trabajos guardados con versiones anteriores no tienen Leyenda ni Hora.
     const cols = rows[0].map(norm);
     const col = (n, def) => (cols.indexOf(n) >= 0 ? cols.indexOf(n) : def);
+    const iTurno = col('turno', -1);
     const [iF, iT, iO, iM, iC, iI, iL, iH] = [col('fecha', 0), col('titular', 1), col('operacion', 2), col('monto', 3), col('cuenta', 4), col('imagen', 5), col('leyenda', -1), col('hora', -1)];
     for (const row of rows.slice(1)) {
       const day = parseDateTime(row[iF]);
@@ -522,6 +523,7 @@ const capturas = {
           tipo: norm(op).startsWith('cobro') ? 'COBRO' : 'PAGO',
           monto: m,
           detalle: iL >= 0 ? cleanText(row[iL]) : '',
+          turno: tod == null && iTurno >= 0 ? cleanText(row[iTurno]) : '',
           imagen: cleanText(row[iI]),
         })
       );

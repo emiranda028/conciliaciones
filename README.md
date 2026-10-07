@@ -66,6 +66,13 @@ de "Mis movimientos" junto con los demás archivos:
 - Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
   en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
   confunda el "$" con un número.
+- Mercado Pago: lee los encabezados de fecha ("Hoy", "Ayer", "Lunes 5 de octubre"), la hora de cada
+  movimiento y los montos sin centavos. "Hoy" y "Ayer" se calculan con la fecha del archivo de la
+  captura. Si los centavos chiquitos no se pueden leer, la fila queda para revisar.
+- **Turno:** en la revisión se puede asignar un turno a todas las capturas o a cada fila. Para los
+  movimientos sin hora, el cruce se limita a las horas de ese turno en vez de todo el día, y el turno
+  aparece en Pendientes y en el Excel. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
+  y Turno 3 (22 a 06); se cambian en Configuración → Turnos y día.
 - Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
   siguiente), se cuenta una sola vez.
 - **Las capturas no muestran la hora**, solo el día. Esos movimientos se cruzan por día, monto y
@@ -137,6 +144,6 @@ scripts/build.mjs  empaquetado con esbuild + ofuscación
 
 ## Supuestos a confirmar con el cliente
 
-- **Turnos:** el documento menciona 3 turnos (00–06, 06–12, 12–18), pero no cubre de 18 a 24. Por defecto se configuraron 4 turnos de 6 horas, y se pueden editar en Configuración → Turnos y día.
+- **Turnos:** por defecto, 3 turnos de 8 horas alineados con el día operativo (06 a 14, 14 a 22 y 22 a 06). Se editan en Configuración → Turnos y día.
 - **Cajero:** los reportes no identifican al cajero de cada turno. Los tiempos se agrupan por el agente del panel (AgenteFB1, josefina.2332, agentez…), que es el usuario con el que opera cada cajero.
 - **PAYOUTS de Mercado Pago:** se toman como pagos a jugadores. Si alguno es un retiro a una cuenta propia, se marca como "Movimiento interno" en Pendientes.

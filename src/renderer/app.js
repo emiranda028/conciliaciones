@@ -411,7 +411,9 @@ async function leerCapturas(files) {
     if (prog) prog.textContent = `Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`;
     try {
       const lines = await api.leerCaptura(new Uint8Array(await files[i].arrayBuffer()));
-      const filas = parsearCaptura(lines, { imagen: files[i].name });
+      // "Hoy"/"Ayer" y el año se toman de la fecha del archivo (cuando se sacó la captura), en hora argentina.
+      const hoy = new Date((files[i].lastModified || Date.now()) - 3 * 3600000);
+      const filas = parsearCaptura(lines, { imagen: files[i].name, hoy });
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
       cap.listas.push(filas);
     } catch (e) {
@@ -441,17 +443,28 @@ function revisarCapturas(cap) {
         Revisá lo leído antes de agregarlo; las filas resaltadas conviene mirarlas con la imagen.</div>
       <div class="row" style="align-items:flex-end;margin-bottom:12px">
         <label class="field"><span>Billetera / cuenta de estas capturas *</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
+        <label class="field"><span>Turno de estas capturas</span><select id="cap-turno-todas">
+          <option value="">Elegir para todas…</option><option value="__ninguno">Sin turno</option>
+          ${state.config.turnos.map((t) => `<option value="${esc(t.nombre)}">${esc(t.nombre)} (${esc(t.desde)} a ${esc(t.hasta)})</option>`).join('')}
+        </select></label>
         <label class="row small"><input type="checkbox" id="cap-unir" ${cap.unir ? 'checked' : ''} /> Quitar movimientos repetidos entre capturas que se superponen${quitadas ? ` (${quitadas} quitados)` : ''}</label>
         <span class="spacer"></span>
         <div class="small muted">${filas.length} movimientos · ${cob.length} cobros ${money(sum(cob))} · ${pag.length} pagos ${money(sum(pag))}${dudosas ? ` · <b class="neg">${dudosas} a revisar</b>` : ''}</div>
       </div>
-      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Hora</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th>Leyenda</th><th></th></tr></thead><tbody>
+      <div class="scroll" style="max-height:52vh"><table class="tbl"><thead><tr><th>Imagen</th><th>Fecha</th><th>Hora</th><th>Turno</th><th>Titular</th><th>Operación</th><th class="num">Monto</th><th>Leyenda</th><th></th></tr></thead><tbody>
       ${filas
         .map(
           (f) => `<tr class="${f.dudoso ? 'sel' : ''}" data-cap-row>
           <td class="small muted">${esc(f.imagen)}</td>
           <td><input data-cap="fecha" value="${esc(f.fecha)}" style="width:110px" /></td>
           <td><input data-cap="hora" value="${esc(f.hora || '')}" placeholder="s/h" style="width:70px" /></td>
+          <td>${
+            f.hora
+              ? '<span class="muted small">por hora</span>'
+              : `<select data-cap="turno"><option value="">Sin turno</option>${state.config.turnos
+                  .map((t) => `<option ${f.turno === t.nombre ? 'selected' : ''}>${esc(t.nombre)}</option>`)
+                  .join('')}</select>`
+          }</td>
           <td><input data-cap="nombre" value="${esc(f.nombre)}${f.truncado ? '...' : ''}" style="width:290px" /></td>
           <td><select data-cap="tipo"><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobro (entra)</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pago (sale)</option></select></td>
           <td class="num"><input data-cap="monto" value="${esc(fmtMoney(f.monto))}" style="width:120px;text-align:right" /></td>
@@ -486,6 +499,13 @@ function revisarCapturas(cap) {
           cap.cuenta = t.value.trim();
           return;
         }
+        if (t.id === 'cap-turno-todas') {
+          if (!t.value) return;
+          const turno = t.value === '__ninguno' ? '' : t.value;
+          for (const f of filasVisibles()) if (!f.hora) f.turno = turno;
+          redraw();
+          return;
+        }
         if (!t.dataset.cap) return;
         const idx = $$('[data-cap-row]', body).indexOf(t.closest('tr'));
         const f = filasVisibles()[idx];
@@ -495,7 +515,7 @@ function revisarCapturas(cap) {
           f.truncado = /(\.\.\.|…)\s*$/.test(t.value);
           f.nombre = t.value.replace(/(\.\.\.|…)\s*$/, '').trim();
         } else f[t.dataset.cap] = t.value.trim();
-        f.dudoso = false;
+        if (t.dataset.cap !== 'turno') f.dudoso = false;
         redraw();
       });
       body.addEventListener('click', (e) => {
@@ -717,7 +737,7 @@ function pendTable(list, lado, hints) {
         <td><input type="checkbox" data-pend="${esc(r.id)}" ${sel ? 'checked' : ''} /></td>
         <td class="nowrap">${esc(horaDe(r))}<div class="muted small">${esc(fmtDate(r.ts))}</div></td>
         <td>${tipoTxt(r.tipo)}</td>
-        <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}${r.sinHora && r.detalle ? ` · <b>${esc(r.detalle)}</b>` : ''}</div></td>
+        <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}${r.sinHora && r.turno ? ` · ${esc(r.turno)}` : ''}${r.sinHora && r.detalle ? ` · <b>${esc(r.detalle)}</b>` : ''}</div></td>
         <td class="num">${money(signed(r))}</td>
         <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}
           ${man ? `<div><button class="link small" data-quitar-estado="${esc(r.id)}">Quitar marca</button></div>` : ''}</td>

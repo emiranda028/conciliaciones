@@ -3,12 +3,34 @@ import ExcelJS from 'exceljs';
 import { DIA, HORA, MIN, fmtDate, horaDe, fmtDuration, median, percentile, round2, parseTimeOfDay } from './util.js';
 import { ESTADOS } from './matcher.js';
 
+// Tres turnos de 8 horas alineados con el día operativo (06:00 a 06:00). Editables en Configuración.
 export const DEFAULT_TURNOS = [
+  { nombre: 'Turno 1', desde: '06:00', hasta: '14:00' },
+  { nombre: 'Turno 2', desde: '14:00', hasta: '22:00' },
+  { nombre: 'Turno 3', desde: '22:00', hasta: '06:00' },
+];
+
+// Turnos de fábrica de versiones anteriores (para actualizar configuraciones sin tocar).
+export const TURNOS_ANTERIORES = [
   { nombre: 'Turno 00 a 06', desde: '00:00', hasta: '06:00' },
   { nombre: 'Turno 06 a 12', desde: '06:00', hasta: '12:00' },
   { nombre: 'Turno 12 a 18', desde: '12:00', hasta: '18:00' },
   { nombre: 'Turno 18 a 24', desde: '18:00', hasta: '24:00' },
 ];
+
+// Franjas de un turno dentro de un día calendario, en ms desde la medianoche.
+// Un turno que cruza la medianoche (22 a 06) da dos franjas: 00-06 y 22-24.
+export function franjasTurno(t) {
+  if (!t) return null;
+  const d = t.desde === '24:00' ? DIA : parseTimeOfDay(t.desde);
+  const h = t.hasta === '24:00' ? DIA : parseTimeOfDay(t.hasta);
+  if (d == null || h == null) return null;
+  if (d < h) return [[d, h]];
+  return [
+    [0, h],
+    [d, DIA],
+  ];
+}
 
 export function turnoDe(ts, turnos = DEFAULT_TURNOS) {
   const tod = ((ts % DIA) + DIA) % DIA;
@@ -217,7 +239,7 @@ function recRow(r, turnos) {
   return {
     fecha: fmtDate(r.ts),
     hora: horaDe(r),
-    turno: r.sinHora ? '' : turnoDe(r.ts, turnos),
+    turno: r.sinHora ? r.turno || '' : turnoDe(r.ts, turnos),
     origen: r.origen,
     cuenta: r.cuenta,
     persona: r.persona,

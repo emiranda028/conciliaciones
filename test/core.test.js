@@ -295,9 +295,10 @@ test('manual: forzar, rechazar y marcar estado', () => {
 // --- reportes -----------------------------------------------------------------------
 
 test('turnos, ventana de día operativo y tiempos', () => {
-  assert.equal(turnoDe(W('21/09/2026, 05:59:59')), 'Turno 00 a 06');
-  assert.equal(turnoDe(W('21/09/2026, 06:00:00')), 'Turno 06 a 12');
-  assert.equal(turnoDe(W('21/09/2026, 23:00:00')), 'Turno 18 a 24');
+  assert.equal(turnoDe(W('21/09/2026, 05:59:59')), 'Turno 3');
+  assert.equal(turnoDe(W('21/09/2026, 06:00:00')), 'Turno 1');
+  assert.equal(turnoDe(W('21/09/2026, 14:00:00')), 'Turno 2');
+  assert.equal(turnoDe(W('21/09/2026, 23:00:00')), 'Turno 3');
   const v = ventanaDia(Date.UTC(2026, 8, 21), 6);
   assert.equal(fmtDateTime(v.from), '21/09/2026 06:00:00');
   assert.equal(fmtDateTime(v.to), '22/09/2026 06:00:00');

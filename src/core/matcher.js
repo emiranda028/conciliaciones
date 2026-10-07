@@ -396,14 +396,16 @@ function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechaza
   const tol = params.toleranciaRelojMin * MIN;
   const pares = [];
   for (const w of wSinHora) {
-    const desde = w.ts - 12 * 60 * MIN;
-    const hasta = desde + 24 * 60 * MIN;
+    // Sin turno: todo el día calendario. Con turno: solo sus franjas horarias.
+    const inicio = w.ts - (((w.ts % 86400000) + 86400000) % 86400000);
+    const franjas = w.franjas || [[inicio, inicio + 24 * 60 * MIN]];
     for (const p of pLibres) {
       if (p.tipo !== w.tipo || usados.has(p.id) || rechazados.has(`${p.id}|${w.id}`)) continue;
-      const okVentana =
+      const okVentana = franjas.some(([desde, hasta]) =>
         p.tipo === 'COBRO'
           ? p.ts >= desde - tol && p.ts < hasta + params.demoraMaxCobroMin * MIN
-          : p.ts >= desde - params.demoraMaxPagoMin * MIN && p.ts < hasta + tol;
+          : p.ts >= desde - params.demoraMaxPagoMin * MIN && p.ts < hasta + tol
+      );
       if (!okVentana) continue;
       const amount = amountRelation(p.monto, w.monto, params, p.tipo);
       if (!amount) continue;

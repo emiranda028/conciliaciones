@@ -3,7 +3,7 @@
 import { readFile, parsePasted } from './tabular.js';
 import { detect, importerByKey, parseGeneric, assignIds, IMPORTERS, LADO } from './importers.js';
 import { conciliar, DEFAULT_PARAMS, nameKey } from './matcher.js';
-import { resumen, tiempos, filtrarResultado, ventanaDia, diaSugerido, DEFAULT_TURNOS } from './report.js';
+import { resumen, tiempos, filtrarResultado, ventanaDia, diaSugerido, DEFAULT_TURNOS, TURNOS_ANTERIORES, franjasTurno } from './report.js';
 import { norm, cleanText, dayFromIso, isoDay, uid } from './util.js';
 
 export const DEFAULT_CONFIG = {
@@ -57,7 +57,8 @@ export function agentesDePaneles(fuentes, config) {
 export function mergeConfig(saved) {
   const c = { ...DEFAULT_CONFIG, ...(saved || {}) };
   c.params = { ...DEFAULT_PARAMS, ...(saved?.params || {}) };
-  c.turnos = saved?.turnos?.length ? saved.turnos : DEFAULT_CONFIG.turnos.map((t) => ({ ...t }));
+  const turnosViejos = JSON.stringify(saved?.turnos) === JSON.stringify(TURNOS_ANTERIORES);
+  c.turnos = saved?.turnos?.length && !turnosViejos ? saved.turnos : DEFAULT_CONFIG.turnos.map((t) => ({ ...t }));
   c.diccionario = saved?.diccionario || {};
   c.plantillas = saved?.plantillas || {};
   c.alias = saved?.alias || {};
@@ -163,6 +164,15 @@ export function dataset(fuentes, config) {
       if (!rec.persona && rec.ref && nombresRetiros[rec.ref]) rec.persona = nombresRetiros[rec.ref];
       const alias = config.alias[norm(rec.cuenta)];
       if (alias) rec.cuenta = alias;
+      // Capturas sin hora con turno asignado: el cruce se limita a las horas de ese turno.
+      if (rec.sinHora && rec.turno) {
+        const fr = franjasTurno((config.turnos || []).find((t) => t.nombre === rec.turno));
+        if (fr) {
+          const inicio = rec.ts - (((rec.ts % 86400000) + 86400000) % 86400000);
+          rec.franjas = fr.map(([a, b]) => [inicio + a, inicio + b]);
+          if (fr.length === 1) rec.ts = inicio + Math.round((fr[0][0] + fr[0][1]) / 2);
+        }
+      }
       all.push(rec);
     }
   }
