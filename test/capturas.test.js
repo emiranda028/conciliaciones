@@ -302,3 +302,80 @@ test('comprobante de transferencia de Mercado Pago', async () => {
     ['181700000000', false, '05/10/2026 10:00:00'],
   ]);
 });
+
+test('Personal Pay en PDF: "de"/"a" pegados y en minúscula debajo de la leyenda', () => {
+  const lines = [
+    ...mov(152, 'Ss', 'Te enviaron dinero', '+$ 25.000,00', '€ delJose Prueba Martinez', '07/10/2026'),
+    ...mov(242, 'Ss', 'Te enviaron dinero', '+$ 5.000,00', '€ devirginia carolina gale...', '07/10/2026'),
+    ...mov(332, 'Ss', 'Enviaste dinero', '-$ 20.000,00', '> alourdes Natalia Inventada', '07/10/2026'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.nombre, f.truncado, f.tipo, f.monto, f.leyenda, f.dudoso]),
+    [
+      ['07/10/2026', 'Jose Prueba Martinez', false, 'COBRO', 25000, '', false],
+      ['07/10/2026', 'Virginia carolina gale', true, 'COBRO', 5000, '', false],
+      ['07/10/2026', 'Lourdes Natalia Inventada', false, 'PAGO', 20000, '', false],
+    ]
+  );
+});
+
+test('Prex / Naranja X: fecha arriba, leyenda con el monto y titular abajo', () => {
+  const lines = [
+    linea(22, [[17, '22:18 NX 4 0 3,0']]),
+    linea(120, [[124, '07 de octubre']]),
+    linea(150, [[60, '<<'], [124, '— Transferencia recibida'], [420, '+ $ 6.000,00']]),
+    linea(176, [[124, 'Leonardo Prueba Aguer']]),
+    linea(220, [[124, '07 de octubre']]),
+    linea(250, [[124, 'Transferenciarecibida'], [420, '+ $ 21.000,00']]),
+    linea(276, [[124, 'Pelay, Zulema Inventada']]),
+    linea(320, [[124, '06 de octubre']]),
+    linea(350, [[124, 'Transferencia enviada'], [420, '- $ 800,00']]),
+    linea(376, [[124, 'Mauro Ficticio Martinez']]),
+  ];
+  const filas = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 8)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.tipo, f.monto, f.leyenda, f.dudoso]),
+    [
+      ['07/10/2026', '', 'Leonardo Prueba Aguer', 'COBRO', 6000, '', false],
+      ['07/10/2026', '', 'Pelay, Zulema Inventada', 'COBRO', 21000, '', false],
+      ['06/10/2026', '', 'Mauro Ficticio Martinez', 'PAGO', 800, '', false],
+    ]
+  );
+});
+
+test('lista con hora y sin día: el ícono "$" delante de la hora no es un monto', () => {
+  const lines = [
+    linea(40, [[30, 'Movimientos']]),
+    linea(150, [[124, 'Hugo Prueba Leguizamon'], [420, '-$277.522']]),
+    linea(176, [[124, 'Transferencia enviada'], [470, '12:17']]),
+    linea(250, [[60, 'a'], [124, 'Liquidación de dinero'], [420, '+ $277.521,21']]),
+    linea(276, [[60, '$'], [470, '12:14']]),
+  ];
+  const filas = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 7, 15)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.tipo, f.monto, f.leyenda, f.dudoso]),
+    [
+      // Sin día en la captura: se supone el de la captura y queda para revisar.
+      ['07/10/2026', '12:17', 'Hugo Prueba Leguizamon', 'PAGO', 277522, '', true],
+      ['07/10/2026', '12:14', 'Liquidación de dinero', 'COBRO', 277521.21, '', true],
+    ]
+  );
+});
+
+test('fecha del nombre del archivo o del título del PDF', async () => {
+  const { fechaDeNombre } = await import('../src/core/capturas.js');
+  const hoy = new Date(Date.UTC(2026, 9, 8));
+  assert.equal(fechaDeNombre('CAPTURAS_OFICINA_TT_07-10__prex_y_nx.pdf', hoy), '07/10/2026');
+  assert.equal(fechaDeNombre('07.10 mov ppay jose', hoy), '07/10/2026');
+  assert.equal(fechaDeNombre('ppay y nx TM Tati. 7-10 cami', hoy), '07/10/2026');
+  assert.equal(fechaDeNombre('CAPTURAS_TATIANA_DIA_7_TT.pdf', hoy), '07/10/2026');
+  assert.equal(fechaDeNombre('CAPTURAS_DIA_30_TM', hoy), '30/09/2026');
+  assert.equal(fechaDeNombre('REPORTE TM PPAY', hoy), '');
+});
+
+test('leyendas de transferencia con letras mal leídas también se omiten', async () => {
+  const { leyendaVisible } = await import('../src/core/capturas.js');
+  for (const t of ['Iransferencia recibida', 'Te envlaron dinero', 'ls Transferencia enviada', 'Transferenciarecibida', 'PA Transferencia enviada']) assert.equal(leyendaVisible(t), '', t);
+  for (const t of ['Pago con QR', 'Rendimientos', 'CARGA TRANSFERENCIA DE', 'Liquidación de dinero']) assert.equal(leyendaVisible(t), t);
+});

@@ -14,6 +14,8 @@ const PALABRA_MONTO = /^[+\-−–]?[$8S§]?[\d.]+,\d{1,2}$/;
 
 function buscarMonto(text) {
   const m = text.match(MONEY);
+  // "$ 12:14": el ícono de la billetera leído como "$" delante de la hora; no es un monto.
+  if (m && /^:\d{2}/.test(text.slice(m.index + m[0].length))) return null;
   if (m) {
     // Mercado Pago muestra los centavos chiquitos arriba ("$ 1.234⁵⁶"): el OCR los deja
     // pegados o separados al final. Se suman y la fila queda para revisar.
@@ -33,8 +35,14 @@ const HORA_RE = /\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:[:.]([0-5]\d))?\s*(?:hs?\b)?/
 
 // Contraparte en el segundo renglón ("a Miriam Marcela Brun", "de Victor Javier Villa").
 // El OCR a veces pega la preposición al nombre ("aMiriam") o deja restos del ícono ("> ", "€ ").
-function contraparte(txt) {
+// Con la leyenda de Personal Pay arriba ("Te enviaron dinero"), el renglón siempre es
+// "de …"/"a …": se acepta también pegado y en minúscula ("devirginia", "delJose").
+function contraparte(txt, seguro = false) {
   const t = String(txt || '').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/, '');
+  if (seguro) {
+    const s = t.match(/^(de|a)(?:\s+|[lI|](?=[A-ZÁÉÍÓÚÑ])|(?=[A-Za-zÁÉÍÓÚÑáéíóúñ]))(.+)$/);
+    if (s) return s[2].charAt(0).toUpperCase() + s[2].slice(1);
+  }
   const m = t.match(/^(de|a|para)(\s?)(.*)$/i);
   if (!m || !m[3] || !/^[A-ZÁÉÍÓÚÑ]/.test(m[3])) return null;
   // "a"/"de" pegados solo si siguen con mayúscula ("aMiriam"); "Acreditación" no califica.
@@ -43,7 +51,7 @@ function contraparte(txt) {
 }
 
 const FECHA = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
-const COBRO_RE = /recibid|recibiste|te enviaron|te transfiri|te pag[oó]|cobr|ingres|acredit|deposit|reintegr|devoluci/i;
+const COBRO_RE = /recibid|recibiste|te enviaron|te transfiri|te pag[oó]|cobr|ingres|acredit|deposit|reintegr|devoluci|\bcarga\b|transferencia de\b/i;
 const PAGO_RE = /enviad|enviaste|pagast|pago|retir|debit|extracci|transferiste|transferencia a /i;
 
 // Fechas escritas como en Mercado Pago: "Hoy", "Ayer", "lunes 5 de octubre", "5 oct".
@@ -114,11 +122,19 @@ const normLeyenda = (s) =>
     .toLowerCase()
     .replace(/[^a-z]+/g, ' ')
     .trim();
-const OMITIDAS = new Set(LEYENDAS_OMITIDAS.map(normLeyenda));
+// La leyenda de transferencia ocupa el lugar del titular (el OCR a veces junta las palabras).
+const OMITIDAS_JUNTAS = new Set(LEYENDAS_OMITIDAS.map((x) => normLeyenda(x).replace(/ /g, '')));
+const esLeyendaTransferencia = (s) => {
+  const k = normLeyenda(s).replace(/ /g, '');
+  // También con alguna letra mal leída ("Iransferencia recibida", "Te envlaron dinero").
+  return [...OMITIDAS_JUNTAS].some((o) => k === o || (k.length >= o.length && k.length - o.length <= 3 && distancia(k.slice(-o.length), o) <= 2));
+};
 
 export function leyendaVisible(detalle) {
   const t = String(detalle || '').replace(/\s+/g, ' ').trim();
-  return OMITIDAS.has(normLeyenda(t)) ? '' : t;
+  if (!/[a-záéíóúñ]{2,}/i.test(t)) return '';
+  // Tolera palabras pegadas ("Transferenciarecibida") y restos del ícono delante ("ls Transferencia enviada").
+  return esLeyendaTransferencia(t) ? '' : t;
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -149,11 +165,36 @@ function limpiarNombre(txt) {
     if (sig.startsWith(ini) || (ini.length === 2 && ini[0] === ini[1] && ini[0] === sig[0])) toks.shift();
   }
   s = toks.join(' ').replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/, '');
+  // Palabras pegadas por el OCR: "SoniaZunilda Gomez" -> "Sonia Zunilda Gomez".
+  s = s.replace(/([a-záéíóúñ]{2})([A-ZÁÉÍÓÚÑ][a-záéíóúñ])/g, '$1 $2');
   return { nombre: s.replace(/:\s/g, ', ').trim(), truncado };
 }
 
+// Día escrito en el nombre del archivo o en el título del PDF: "07-10", "07.10", "7/10/2026", "DIA 7".
+export function fechaDeNombre(texto, hoy = new Date()) {
+  const t = String(texto || '');
+  const m = t.match(/(?<![\d])(\d{1,2})[-./_](\d{1,2})(?:[-./_](\d{4}|\d{2}))?(?![\d])/);
+  if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12) return inferirFecha(+m[1], +m[2], m[3], hoy);
+  const d = t.match(/(?<![A-Za-z])d[ií]a[\s_-]*(\d{1,2})(?!\d)/i);
+  if (d && +d[1] >= 1 && +d[1] <= 31) {
+    // Mes de la fecha de referencia, o el anterior si ese día todavía no llegó.
+    let mes = hoy.getUTCMonth() + 1;
+    let anio = hoy.getUTCFullYear();
+    if (+d[1] > hoy.getUTCDate() + 1) {
+      mes -= 1;
+      if (!mes) {
+        mes = 12;
+        anio -= 1;
+      }
+    }
+    return inferirFecha(+d[1], mes, anio, hoy);
+  }
+  return '';
+}
+
 // lines: [{ text, bbox:{x0,y0,x1,y1}, words:[{text,bbox}] }] en orden de lectura.
-export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
+// fechaDefecto: día a usar si la captura no muestra ninguno (por ejemplo, el del nombre del PDF).
+export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefecto = '' } = {}) {
   const ls = lines.map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
   // Columna de texto: donde empiezan los renglones de detalle ("Transferencia recibida 28/09").
   const detalleX = ls
@@ -161,6 +202,15 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
     .map((l) => l.bbox.x0)
     .sort((a, b) => a - b);
   const colX = detalleX.length ? detalleX[Math.floor(detalleX.length / 2)] : null;
+
+  // Formato D: dos renglones de texto ("CARGA TRANSFERENCIA DE" / "TITULAR") con el monto
+  // centrado entre los dos: el OCR deja el monto en un renglón propio, sin nombre.
+  const sinTexto = (t) => !/[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(t);
+  const conMonto = ls.map((l) => buscarMonto(l.text));
+  const nMontos = conMonto.filter(Boolean).length;
+  const nSolos = ls.filter((l, i) => conMonto[i] && sinTexto(l.text.slice(0, conMonto[i].index))).length;
+  const enMedio = nMontos >= 2 && nSolos >= nMontos / 2;
+  const textoVecino = (j) => (j >= 0 && j < ls.length && !conMonto[j] && !esEncabezadoFecha(ls[j].text) ? ls[j].text.replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/, '').replace(/[\s—–-]+$/, '') : '');
 
   const filas = [];
   let ultimaFecha = '';
@@ -185,26 +235,63 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
     } else nombreTxt = l.text.slice(0, m.index);
     nombreTxt = nombreTxt.replace(MONEY, '').replace(/[+\-−–]?\$[\d.,]*$/, '').replace(MONEY_SIN_SIGNO, '');
     const { nombre, truncado } = limpiarNombre(nombreTxt);
+    if (enMedio && sinTexto(nombre)) {
+      const arriba = textoVecino(i - 1);
+      const abajo = textoVecino(i + 1);
+      const junto = `${arriba} ${abajo}`.replace(/\s+/g, ' ').trim();
+      // "CARGA TRANSFERENCIA DE BRIAN" / "FABRIZIO MOLINA": la leyenda termina en "de"/"a".
+      const p = junto.match(/^(.*?\b(?:de|desde|a|para))\s+(.+)$/i);
+      const [ley, quien] = p && (COBRO_RE.test(p[1]) || PAGO_RE.test(p[1])) ? [p[1], p[2]] : [arriba, abajo];
+      if (quien) {
+        const c = limpiarNombre(quien);
+        const textoTipo = ley || '';
+        const tipo = COBRO_RE.test(textoTipo) ? 'COBRO' : PAGO_RE.test(textoTipo) ? 'PAGO' : m.signo === '-' || m.signo === '−' || m.signo === '–' ? 'PAGO' : 'COBRO';
+        const dudoso = !(COBRO_RE.test(textoTipo) || PAGO_RE.test(textoTipo)) || (m.signo === '+' && tipo === 'PAGO') || m.dudoso;
+        const fecha = ultimaFecha || fechaDefecto;
+        filas.push({
+          fecha,
+          hora: '',
+          nombre: c.nombre,
+          tipo,
+          monto,
+          truncado: c.truncado,
+          leyenda: leyendaVisible(ley),
+          dudoso: dudoso || !fecha || !c.nombre || (l.confidence != null && l.confidence < 60),
+          imagen,
+        });
+        continue;
+      }
+    }
     // Detalle: renglones siguientes hasta el próximo monto.
     let detalle = '';
     for (let j = i + 1; j < ls.length && j <= i + 2 && !buscarMonto(ls[j].text) && !esEncabezadoFecha(ls[j].text); j += 1) detalle += ` ${ls[j].text}`;
     detalle = detalle.trim();
-    const fecha = fechaEnTexto(detalle, hoy) || fechaEnTexto(l.text.slice(0, m.index), hoy) || ultimaFecha;
+    let fecha = fechaEnTexto(detalle, hoy) || fechaEnTexto(l.text.slice(0, m.index), hoy) || ultimaFecha || fechaDefecto;
     if (fecha) ultimaFecha = fecha;
     // Hora, si la billetera la muestra ("13:45", "13:45 hs").
     const sinFecha = (x) => x.replace(FECHA, ' ');
     const h = sinFecha(detalle).match(HORA_RE) || sinFecha(nombreTxt).match(HORA_RE);
     const hora = h ? `${String(h[1]).padStart(2, '0')}:${h[2]}${h[3] ? `:${h[3]}` : ''}` : '';
-    // Dos formatos de lista:
+    // Solo la hora y ningún día arriba: las billeteras muestran así los movimientos de hoy.
+    // Se toma el día de la captura y la fila queda para revisar.
+    let fechaSupuesta = false;
+    if (!fecha && hora) {
+      fecha = inferirFecha(hoy.getUTCDate(), hoy.getUTCMonth() + 1, hoy.getUTCFullYear());
+      fechaSupuesta = true;
+    }
+    // Tres formatos de lista:
     //   A) renglón 1: titular + monto; renglón 2: leyenda + fecha ("Transferencia recibida").
     //   B) renglón 1: leyenda + monto ("Te enviaron dinero"); renglón 2: "de/a Titular" + fecha.
+    //   C) (Prex, Naranja X) fecha arriba; renglón 1: leyenda + monto; renglón 2: titular solo.
     let nombreFinal = nombre;
     let truncadoFinal = truncado;
     let leyendaTxt = sinFecha(detalle).replace(HORA_RE, ' ');
     let textoTipo = detalle;
-    const otro = contraparte(sinFecha(detalle).replace(HORA_RE, ' ').trim());
-    if (otro) {
-      const c = limpiarNombre(otro);
+    const resto = sinFecha(detalle).replace(HORA_RE, ' ').trim();
+    const nombreEsLeyenda = esLeyendaTransferencia(nombre);
+    const otro = contraparte(resto, nombreEsLeyenda);
+    if (otro || (nombreEsLeyenda && resto && !COBRO_RE.test(resto) && !PAGO_RE.test(resto))) {
+      const c = limpiarNombre(otro || resto);
       leyendaTxt = nombre;
       nombreFinal = c.nombre;
       truncadoFinal = c.truncado;
@@ -227,7 +314,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '' } = {}) {
       monto,
       truncado: truncadoFinal,
       leyenda: leyendaVisible(leyendaTxt),
-      dudoso: dudoso || !fecha || !nombreFinal || (l.confidence != null && l.confidence < 60),
+      dudoso: dudoso || fechaSupuesta || !fecha || !nombreFinal || (l.confidence != null && l.confidence < 60),
       imagen,
     });
   }
@@ -371,7 +458,23 @@ export function resolverComprobantes(filas, cuenta = '') {
 
 // Une capturas consecutivas: si el final de una coincide con el principio de otra
 // (el mismo movimiento aparece en las dos), se cuenta una sola vez.
-export function unirCapturas(listas) {
+// consecutivas: las listas están en orden (páginas de un PDF) y solo se une cada una con la siguiente.
+export function unirCapturas(listas, { consecutivas = false } = {}) {
+  if (consecutivas) {
+    const filas = [];
+    let quitadas = 0;
+    for (const l of listas.filter((x) => x.length)) {
+      let k = Math.min(filas.length, l.length);
+      for (; k >= 1; k -= 1) {
+        let ok = true;
+        for (let t = 0; t < k && ok; t += 1) ok = claveFila(filas[filas.length - k + t]) === claveFila(l[t]);
+        if (ok) break;
+      }
+      quitadas += k;
+      filas.push(...l.slice(k));
+    }
+    return { filas, quitadas };
+  }
   let grupos = listas.filter((l) => l.length).map((l) => [...l]);
   let quitadas = 0;
   for (;;) {
@@ -405,5 +508,5 @@ export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuent
 
 // Tabla que se guarda como fuente (así se puede guardar en el trabajo y volver a leer).
 export function filasATabla(filas, cuenta) {
-  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || '', f.hora ? '' : f.turno || '', f.ref || ''])];
+  return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, f.cuenta || cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || '', f.hora ? '' : f.turno || '', f.ref || ''])];
 }

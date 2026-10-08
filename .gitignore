@@ -7,3 +7,5 @@ datos/
 *.xlsx
 *.csv
 !test/fixtures/*.csv
+*.pdf
+!test/fixtures/*.pdf

@@ -222,15 +222,17 @@ export function sugerirDia(fuentes, config) {
 }
 
 // Corre todo. dia: 'YYYY-MM-DD' o '' para no filtrar.
-export function ejecutar({ fuentes, config, manual, dia, linea }) {
+// agentes: lista de agentes elegidos a mano; si viene, manda sobre la línea.
+export function ejecutar({ fuentes, config, manual, dia, linea, agentes: elegidos }) {
   const ds = dataset(fuentes, config);
   const { billetera, duplicadosDescartados } = ds;
   let { panel } = ds;
-  // Línea elegida: solo los movimientos de panel de sus agentes.
+  // Línea o agentes elegidos: solo los movimientos de panel de esos agentes.
   const excluidosLinea = {};
-  const l = linea ? (config.lineas || []).find((x) => x.nombre === linea) : null;
-  if (l) {
-    const agentes = new Set(l.agentes.map(norm));
+  const l = elegidos ? null : linea ? (config.lineas || []).find((x) => x.nombre === linea) : null;
+  const lista = elegidos || l?.agentes;
+  if (lista) {
+    const agentes = new Set(lista.map(norm));
     panel = panel.filter((r) => {
       if (agentes.has(norm(r.cuenta))) return true;
       const k = r.cuenta || '(sin agente)';
@@ -247,6 +249,7 @@ export function ejecutar({ fuentes, config, manual, dia, linea }) {
     billetera,
     duplicadosDescartados,
     linea: l ? l.nombre : '',
+    agentes: elegidos ? [...elegidos] : null,
     excluidosLinea,
     completo: res,
     vista,

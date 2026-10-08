@@ -47,6 +47,10 @@ mezclados agentes de varias líneas, así que al elegir una línea se toman solo
 se informan como "dejados afuera". Los agentes de cada línea se editan en Configuración → Líneas y
 agentes, donde también se ven los agentes encontrados en los paneles cargados para asignarles línea.
 
+Además del desplegable, en **Cargar reportes → Conciliar** se pueden tildar uno o más agentes de los
+paneles cargados (pueden ser de distintas líneas) para conciliar solo esos. Al elegir una línea en el
+desplegable se tildan los de esa línea; los botones **Todos** y **Ninguno** ayudan a armar la selección.
+
 ### Capturas de pantalla
 
 Algunas billeteras solo permiten ver los movimientos en el celular. Se pueden arrastrar las capturas
@@ -56,6 +60,10 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   Shift+clic o Ctrl+A en la ventana de Windows). Con **Elegir carpeta de capturas…** se toman todas
   las imágenes de una carpeta, por ejemplo una carpeta por turno. Desde la revisión, **Agregar más
   imágenes…** suma otras al mismo lote, y toman el turno que ya se eligió para el lote.
+- **PDF con capturas** (por ejemplo, los que arma CamScanner): se eligen o arrastran igual que las
+  imágenes. Se lee la captura de cada página, en orden, sin la marca de agua. El título del PDF
+  ("REPORTE TM PPAY DAMIAN PERALTA") queda como billetera de esos movimientos, y si el nombre del
+  archivo o el título dice TM, TT o TN (o "turno 1/2/3"), los movimientos sin hora toman Turno 1, 2 o 3.
 - El texto se lee con OCR (Tesseract, en español) **en la misma computadora y sin conexión**. El
   lector y el idioma viajan dentro del `.exe`. La primera lectura tarda unos segundos; después,
   alrededor de 1 segundo por imagen.
@@ -65,8 +73,10 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - Se guarda la leyenda de cada movimiento ("Pago con QR", "Rendimientos"…) salvo las habituales de
   transferencias: "Transferencia enviada", "Transferencia recibida", "Te enviaron dinero" y
   "Enviaste dinero". La leyenda se ve en la revisión, en Pendientes y en el Excel exportado.
-- Reconoce dos formatos de lista: titular arriba y leyenda abajo ("Transferencia recibida"), o
-  leyenda arriba y "de/a Titular" abajo ("Te enviaron dinero" / "de Victor…", como Personal Pay).
+- Reconoce tres formatos de lista: titular arriba y leyenda abajo ("Transferencia recibida");
+  leyenda arriba y "de/a Titular" abajo ("Te enviaron dinero" / "de Victor…", como Personal Pay); o
+  fecha arriba, leyenda con el monto y titular abajo (Prex, Naranja X). Si la lista muestra solo la
+  hora, sin el día, se supone el día de la captura y la fila queda para revisar.
 - Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
   en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
   confunda el "$" con un número.

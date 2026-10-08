@@ -387,4 +387,10 @@ test('líneas: solo se concilian los agentes de la línea elegida', async () => 
   assert.equal(z.resumen.nPanelOperables, 1);
   assert.equal(z.resumen.avance, 1);
   assert.deepEqual(z.excluidosLinea, { agent01: 1, agenteb: 1 });
+  // Agentes elegidos uno por uno (de distintas líneas): mandan sobre la línea.
+  const sel = ejecutar({ fuentes: [zeus, cash], config, manual: {}, dia: '2026-09-29', linea: 'AgenteZ', agentes: ['AgenteZ', 'agent01'] });
+  assert.equal(sel.resumen.nPanelOperables, 2);
+  assert.equal(sel.linea, '');
+  assert.deepEqual(sel.agentes, ['AgenteZ', 'agent01']);
+  assert.deepEqual(sel.excluidosLinea, { agenteb: 1 });
 });

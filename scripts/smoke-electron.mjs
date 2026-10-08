@@ -74,9 +74,16 @@ try {
   await win.setInputFiles('#cap-mas', [path.resolve('test/fixtures/captura-ejemplo.png')]);
   await win.waitForFunction(() => document.querySelectorAll('[data-cap-row]').length === 5 && !document.querySelector('#cap-ok').disabled, null, { timeout: 120000 }).catch(() => fail('no se agregaron las imágenes al lote'));
   await win.evaluate(() => document.querySelector('[data-close]').click());
+  await win.waitForTimeout(500);
+  // PDF con una captura adentro (como los de CamScanner): título como billetera y turno del nombre (TT).
+  await win.setInputFiles('#cap-in', [path.resolve('test/fixtures/capturas-ejemplo.pdf')]);
+  await win.waitForSelector('#cap-ok', { timeout: 120000 });
+  const pdf = await win.$$eval('[data-cap-row]', (rs) => rs.map((r) => r.innerText + [...r.querySelectorAll('select')].map((x) => x.selectedOptions[0]?.text).join(' ')));
+  if (pdf.length !== 4 || !pdf.every((t) => /billetera inventada/.test(t))) fail(`PDF mal leído: ${pdf.join(' | ')}`);
+  await win.evaluate(() => document.querySelector('[data-close]').click());
   await win.waitForTimeout(1000);
   if (!fs.existsSync(path.join(dir, 'ConciliadorDatos', 'configuracion.json'))) fail('no se guardó la configuración junto al ejecutable');
-  if (!process.exitCode) console.log(`OK: la app abre, lee los reportes, concilia (2/2), lee capturas con OCR (${filasOcr}/4), comprobantes y lotes de varias imágenes, bloquea la red y guarda la configuración.`);
+  if (!process.exitCode) console.log(`OK: la app abre, lee los reportes, concilia (2/2), lee capturas con OCR (${filasOcr}/4), comprobantes, PDF y lotes de varias imágenes, bloquea la red y guarda la configuración.`);
 } finally {
   await app.close();
 }

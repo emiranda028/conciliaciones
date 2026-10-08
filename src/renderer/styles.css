@@ -661,3 +661,13 @@ table.tbl {
 .tbl .badge {
   white-space: normal;
 }
+
+.agentes-sel label.badge {
+  cursor: pointer;
+  user-select: none;
+}
+
+.agentes-sel label.badge input {
+  margin: 0 4px 0 0;
+  vertical-align: -2px;
+}

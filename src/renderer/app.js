@@ -19,8 +19,9 @@ import {
   agentesDePaneles,
   DEFAULT_LINEAS,
 } from '../core/session.js';
-import { parsearCaptura, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
+import { parsearCaptura, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
+import { imagenesDePdf } from '../core/pdf.js';
 import { exportarExcel, TRAMOS, turnoDe } from '../core/report.js';
 import { ESTADOS, DEFAULT_PARAMS } from '../core/matcher.js';
 import { fmtDate, fmtTime, horaDe, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay, parseNumber } from '../core/util.js';
@@ -50,6 +51,8 @@ const state = {
   fuentes: [],
   manual: { forzados: [], estados: {}, rechazados: [] },
   dia: '',
+  // Agentes del panel elegidos a mano (null: los de la línea elegida, o todos).
+  agentesSel: null,
   run: null,
   dataDir: '',
   // filtros y selección por vista
@@ -180,7 +183,7 @@ function recompute() {
     state.run = null;
     return;
   }
-  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia, linea: state.config.lineaActiva });
+  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia, linea: state.config.lineaActiva, agentes: state.agentesSel });
   const antes = JSON.stringify(state.config.diccionario);
   state.config.diccionario = unirDiccionario(state.config.diccionario, state.run.diccionarioAprendido);
   if (JSON.stringify(state.config.diccionario) !== antes) saveConfigSoon();
@@ -242,8 +245,25 @@ function lineaSelectHtml(id) {
   const act = state.config.lineaActiva;
   return `<select id="${id}" data-linea-select title="Concilia solo los agentes de esa línea">
     <option value="">Todas las líneas</option>
-    ${state.config.lineas.map((l) => `<option ${l.nombre === act ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}
+    ${state.config.lineas.map((l) => `<option ${!state.agentesSel && l.nombre === act ? 'selected' : ''}>${esc(l.nombre)}</option>`).join('')}
+    ${state.agentesSel ? `<option value="__sel" selected>Agentes elegidos (${state.agentesSel.length})</option>` : ''}
   </select>`;
+}
+
+// Cómo se llama lo que se concilió: la línea o los agentes elegidos.
+function etiquetaRun(run) {
+  if (run.linea) return `Línea ${run.linea}`;
+  if (run.agentes) return run.agentes.length === 1 ? `Agente ${run.agentes[0]}` : `Agentes ${run.agentes.join(', ')}`;
+  return '';
+}
+
+const normAgente = (a) => String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// ¿El agente entra en la conciliación? Elegidos a mano, o los de la línea, o todos.
+function agenteIncluido(a) {
+  if (state.agentesSel) return state.agentesSel.some((x) => normAgente(x) === normAgente(a.agente));
+  const act = state.config.lineaActiva;
+  return !act || a.linea === act;
 }
 
 function diaSelectorHtml() {
@@ -291,13 +311,13 @@ function viewCargar() {
         <label class="dropzone" id="drop">
           <div class="big">Arrastrá acá los archivos o hacé clic para elegirlos</div>
           <div class="muted">Excel (.xlsx) o CSV: User Transactions de BETS, reporte de Cash, reportes de Mercado Pago, planillas de GANEMOS o ZEUS.</div>
-          <div class="muted">También capturas de pantalla (.png, .jpg) de "Mis movimientos" de las billeteras.</div>
-          <input type="file" id="file-in" multiple accept=".xlsx,.xlsm,.csv,.txt,.png,.jpg,.jpeg,.webp,.bmp" hidden />
+          <div class="muted">También capturas de pantalla (.png, .jpg) de "Mis movimientos" de las billeteras, sueltas o juntas en un PDF (por ejemplo, de CamScanner).</div>
+          <input type="file" id="file-in" multiple accept=".xlsx,.xlsm,.csv,.txt,.png,.jpg,.jpeg,.webp,.bmp,.pdf" hidden />
         </label>
         <div class="row" style="margin-top:12px">
-          <label class="btn">Elegir capturas…<input type="file" id="cap-in" multiple accept=".png,.jpg,.jpeg,.webp,.bmp" hidden /></label>
+          <label class="btn">Elegir capturas…<input type="file" id="cap-in" multiple accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" hidden /></label>
           <label class="btn">Elegir carpeta de capturas…<input type="file" id="cap-dir" webkitdirectory multiple hidden /></label>
-          <span class="muted small">Se pueden elegir muchas a la vez: Ctrl+clic o Shift+clic en la ventana, o Ctrl+A para todas. Con "carpeta" se toman todas las imágenes de esa carpeta (por ejemplo, una carpeta por turno).</span>
+          <span class="muted small">Se pueden elegir muchas a la vez: Ctrl+clic o Shift+clic en la ventana, o Ctrl+A para todas. Con "carpeta" se toman todas las imágenes de esa carpeta (por ejemplo, una carpeta por turno). También se pueden elegir PDF con capturas.</span>
         </div>
       </div>
       <div class="card">
@@ -343,16 +363,21 @@ function agentesResumenHtml() {
   if (!ags.length) return '';
   const act = state.config.lineaActiva;
   const sinLinea = ags.filter((a) => !a.linea);
-  return `<h3>Agentes en los paneles cargados</h3><div class="row">
+  const n = ags.filter(agenteIncluido).length;
+  return `<h3>Agentes en los paneles cargados</h3>
+    <p class="small muted">Tildá uno o más agentes para conciliar solo esos (pueden ser de distintas líneas). Al elegir una línea en el desplegable se tildan los de esa línea.</p>
+    <div class="row agentes-sel">
     ${ags
       .map((a) => {
-        const cls = !a.linea ? 'bad' : act && a.linea !== act ? '' : 'ok';
+        const inc = agenteIncluido(a);
+        const cls = inc ? 'ok' : !a.linea ? 'bad' : '';
         const txt = !a.linea ? 'sin línea' : a.linea;
-        return `<span class="badge ${cls}" title="${esc(a.origenes.join(', '))}">${esc(a.agente)} · ${a.movimientos} · ${esc(txt)}</span>`;
+        return `<label class="badge ${cls}" title="${esc(a.origenes.join(', '))}"><input type="checkbox" data-agente-sel="${esc(a.agente)}" ${inc ? 'checked' : ''} /> ${esc(a.agente)} · ${a.movimientos} · ${esc(txt)}</label>`;
       })
       .join('')}
-    </div>${sinLinea.length ? `<p class="small neg">Hay agentes sin línea asignada. Asignalos en Configuración → Líneas y agentes; si no, quedan afuera al elegir una línea.</p>` : ''}
-    ${act ? `<p class="small muted">En verde, los agentes que entran en la línea ${esc(act)}. Los demás se dejan afuera.</p>` : ''}`;
+      <button class="btn sm" data-act="agentes-todos">Todos</button><button class="btn sm" data-act="agentes-ninguno">Ninguno</button>
+    </div>${sinLinea.length && act && !state.agentesSel ? `<p class="small neg">Hay agentes sin línea asignada. Asignalos en Configuración → Líneas y agentes, o tildalos a mano; si no, quedan afuera al elegir una línea.</p>` : ''}
+    <p class="small muted">Entran ${n} de ${ags.length} agentes${state.agentesSel ? ' (elegidos a mano)' : act ? ` (línea ${esc(act)})` : ''}. Los demás se dejan afuera.</p>`;
 }
 
 afterRender.cargar = () => {
@@ -373,14 +398,51 @@ afterRender.cargar = () => {
     const el = $(id);
     el.addEventListener('change', () => {
       const imgs = [...el.files].filter((f) => ES_IMAGEN.test(f.name));
-      if (!imgs.length) return toast('No se encontraron imágenes (.png, .jpg) en lo elegido.', true);
+      if (!imgs.length) return toast('No se encontraron imágenes (.png, .jpg) ni PDF en lo elegido.', true);
       leerCapturas(imgs);
       el.value = '';
     });
   }
 };
 
-const ES_IMAGEN = /\.(png|jpe?g|webp|bmp)$/i;
+// Capturas: imágenes sueltas o PDF con capturas adentro.
+const ES_IMAGEN = /\.(png|jpe?g|webp|bmp|pdf)$/i;
+
+// Turno escrito en el nombre del archivo o del PDF: TM / TT / TN (mañana, tarde, noche) o "turno 2".
+function turnoDeNombre(texto) {
+  const t = state.config.turnos;
+  const s = ` ${String(texto || '').replace(/[_.\-]+/g, ' ')} `;
+  const m = /\sturno\s*(\d)\s/i.exec(s);
+  if (m) return t[Number(m[1]) - 1]?.nombre || '';
+  const i = [/\s(tm|ma[nñ]ana)\s/i, /\s(tt|tarde)\s/i, /\s(tn|noche)\s/i].findIndex((re) => re.test(s));
+  return i >= 0 ? t[i]?.nombre || '' : '';
+}
+
+// Los PDF se abren en sus imágenes (una o más por página); las imágenes pasan como están.
+async function expandirPdfs(files, errores) {
+  const out = [];
+  for (const f of files) {
+    if (!/\.pdf$/i.test(f.name)) {
+      out.push(f);
+      continue;
+    }
+    try {
+      const { titulo, imagenes } = imagenesDePdf(new Uint8Array(await f.arrayBuffer()));
+      if (!imagenes.length) errores.push(`${f.name}: el PDF no tiene capturas (imágenes JPEG) que se puedan leer.`);
+      const base = f.name.replace(/\.pdf$/i, '');
+      for (const img of imagenes)
+        out.push({
+          name: `${base} · pág. ${img.pagina}${imagenes.filter((x) => x.pagina === img.pagina).length > 1 ? ` (${imagenes.indexOf(img) + 1})` : ''}`,
+          lastModified: f.lastModified,
+          arrayBuffer: async () => img.bytes.buffer.slice(img.bytes.byteOffset, img.bytes.byteOffset + img.bytes.byteLength),
+          pdf: { archivo: f.name, titulo },
+        });
+    } catch (e) {
+      errores.push(`${f.name}: no se pudo abrir el PDF (${e.message || e}).`);
+    }
+  }
+  return out;
+}
 
 async function cargarArchivos(files) {
   if (!files.length) return;
@@ -410,6 +472,7 @@ async function cargarArchivos(files) {
 // Lee con OCR las imágenes y agrega sus movimientos al lote (cap). Devuelve las filas nuevas.
 async function ocrArchivos(files, cap, progreso) {
   files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
+  files = await expandirPdfs(files, cap.errores);
   const nuevas = [];
   for (let i = 0; i < files.length; i += 1) {
     progreso(`Leyendo imagen ${i + 1} de ${files.length}: ${files[i].name}`);
@@ -423,10 +486,21 @@ async function ocrArchivos(files, cap, progreso) {
       if (esComprobante(lines.concat(lines2))) {
         const c = parsearComprobante(lines, lines2, { imagen: files[i].name, hoy });
         filas = c ? [c] : [];
-      } else filas = parsearCaptura(lines, { imagen: files[i].name, hoy });
+      } else {
+        // Si la captura no muestra el día, se toma el del nombre del archivo o del título del PDF ("07-10").
+        const pdf = files[i].pdf;
+        const fechaDefecto = fechaDeNombre(pdf?.titulo || '', hoy) || fechaDeNombre(pdf?.archivo || files[i].name, hoy);
+        filas = parsearCaptura(lines, { imagen: files[i].name, hoy, fechaDefecto });
+      }
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
-      // Las capturas sin hora toman el turno elegido para el lote.
-      for (const f of filas) if (!f.hora && cap.turnoTodas) f.turno = cap.turnoTodas;
+      // Las capturas sin hora toman el turno del nombre del archivo (TM, TT, TN…) o el elegido para el lote.
+      const turno = turnoDeNombre(`${files[i].pdf?.archivo || files[i].name} ${files[i].pdf?.titulo || ''}`) || cap.turnoTodas;
+      for (const f of filas) {
+        if (!f.hora && turno) f.turno = turno;
+        // El título del PDF (por ejemplo "REPORTE TM PPAY DAMIAN PERALTA") nombra la billetera.
+        if (files[i].pdf?.titulo) f.cuenta = files[i].pdf.titulo;
+      }
+      if (files[i].pdf) filas.pdf = files[i].pdf.archivo;
       cap.listas.push(filas);
       nuevas.push(...filas);
     } catch (e) {
@@ -444,7 +518,7 @@ async function leerCapturas(files) {
   }
   const cap = { listas: [], unir: true, cuenta: state.config.ultimaCuentaCaptura || '', errores: [], turnoTodas: '' };
   const close = modal({
-    title: `Leyendo ${files.length} captura(s)…`,
+    title: `Leyendo ${files.length} archivo(s)…`,
     persistente: true,
     body: '<div class="empty"><div class="big" id="cap-prog">Preparando el lector…</div>La primera lectura tarda unos segundos más.</div>',
     foot: '<span class="muted small">Todo se procesa en esta computadora, sin conexión.</span>',
@@ -460,7 +534,21 @@ async function leerCapturas(files) {
 function capFilas(cap) {
   const listas = cap.listas.map((l) => l.filter((f) => !f.borrada));
   if (!cap.unir) return { filas: listas.flat(), quitadas: 0 };
-  return unirCapturas(listas);
+  // Cada PDF se une por separado y página con la siguiente; las imágenes sueltas, entre todas.
+  const grupos = new Map();
+  cap.listas.forEach((l, i) => {
+    const g = l.pdf || '';
+    if (!grupos.has(g)) grupos.set(g, []);
+    grupos.get(g).push(listas[i]);
+  });
+  let quitadas = 0;
+  const filas = [];
+  for (const [g, ls] of grupos) {
+    const r = unirCapturas(ls, { consecutivas: !!g });
+    quitadas += r.quitadas;
+    filas.push(...r.filas);
+  }
+  return { filas, quitadas };
 }
 
 function revisarCapturas(cap) {
@@ -475,7 +563,7 @@ function revisarCapturas(cap) {
       <div class="notice info">Si las capturas no muestran la hora, esos movimientos se cruzan por día, monto y titular, y no entran en la medición de tiempos.
         Revisá lo leído antes de agregarlo; las filas resaltadas conviene mirarlas con la imagen.</div>
       <div class="row" style="align-items:flex-end;margin-bottom:12px">
-        <label class="field"><span>Billetera / cuenta de estas capturas *</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
+        <label class="field"><span>Billetera / cuenta de estas capturas *${cap.listas.some((l) => l.some((f) => f.cuenta)) ? ' (los PDF usan su título)' : ''}</span><input id="cap-cuenta" value="${esc(cap.cuenta)}" placeholder="Ej.: Personal Pay caja 3" style="width:280px" /></label>
         <label class="field"><span>Turno de estas capturas</span><select id="cap-turno-todas">
           <option value="">Elegir para todas…</option><option value="__ninguno">Sin turno</option>
           ${state.config.turnos.map((t) => `<option value="${esc(t.nombre)}" ${cap.turnoTodas === t.nombre ? 'selected' : ''}>${esc(t.nombre)} (${esc(t.desde)} a ${esc(t.hasta)})</option>`).join('')}
@@ -488,7 +576,7 @@ function revisarCapturas(cap) {
       ${filas
         .map(
           (f) => `<tr class="${f.dudoso ? 'sel' : ''}" data-cap-row>
-          <td class="small muted">${esc(f.imagen)}</td>
+          <td class="small muted">${esc(f.imagen)}${f.cuenta ? `<div>${esc(f.cuenta)}</div>` : ''}</td>
           <td><input data-cap="fecha" value="${esc(f.fecha)}" style="width:110px" /></td>
           <td><input data-cap="hora" value="${esc(f.hora || '')}" placeholder="s/h" style="width:70px" /></td>
           <td>${
@@ -513,7 +601,7 @@ function revisarCapturas(cap) {
     title: 'Revisar movimientos leídos de las capturas',
     persistente: true,
     body: `<div id="cap-body">${cuerpo()}</div>`,
-    foot: `<label class="btn" style="margin-right:auto">Agregar más imágenes…<input type="file" id="cap-mas" multiple accept=".png,.jpg,.jpeg,.webp,.bmp" hidden /></label>
+    foot: `<label class="btn" style="margin-right:auto">Agregar más imágenes…<input type="file" id="cap-mas" multiple accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" hidden /></label>
       <button class="btn" data-close>Cancelar</button><button class="btn primary" id="cap-ok">Agregar a la conciliación</button>`,
     onMount(el, close) {
       const body = $('#cap-body', el);
@@ -582,15 +670,16 @@ function revisarCapturas(cap) {
       });
       $('#cap-ok', el).addEventListener('click', () => {
         cap.cuenta = ($('#cap-cuenta', el)?.value || cap.cuenta).trim();
-        if (!cap.cuenta) return toast('Indicá a qué billetera o cuenta corresponden las capturas.', true);
         const filas = filasVisibles();
+        if (!cap.cuenta && filas.some((f) => !f.cuenta)) return toast('Indicá a qué billetera o cuenta corresponden las capturas.', true);
         const malas = filas.filter((f) => !/^\d{2}\/\d{2}\/\d{4}$/.test(f.fecha) || !(f.monto > 0) || (f.hora && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(f.hora)));
         if (malas.length) return toast(`Hay ${malas.length} fila(s) sin fecha (dd/mm/aaaa), con hora inválida (hh:mm) o sin monto válido. Corregilas o quitálas.`, true);
         if (!filas.length) return toast('No hay movimientos para agregar.', true);
         const nImg = new Set(filas.map((f) => f.imagen)).size;
-        const fuente = tableToFuente(`Capturas: ${cap.cuenta} (${nImg} imágenes)`, { sheet: null, rows: filasATabla(filas, cap.cuenta) }, state.config);
+        const cuentas = [...new Set(filas.map((f) => f.cuenta || cap.cuenta))];
+        const fuente = tableToFuente(`Capturas: ${cuentas.length > 2 ? `${cuentas.slice(0, 2).join(', ')}…` : cuentas.join(', ')} (${nImg} imágenes)`, { sheet: null, rows: filasATabla(filas, cap.cuenta) }, state.config);
         state.fuentes.push(fuente);
-        state.config.ultimaCuentaCaptura = cap.cuenta;
+        if (cap.cuenta) state.config.ultimaCuentaCaptura = cap.cuenta;
         saveConfigSoon();
         if (!state.dia) state.dia = sugerirDia(state.fuentes, state.config);
         close();
@@ -620,7 +709,7 @@ function viewResumen() {
         return `${ag} (${n}${l ? `, línea ${l.nombre}` : ', sin línea'})`;
       })
       .join(', ');
-    avisos.push(`Línea ${state.run.linea}: de los paneles cargados (todos los días) se dejaron afuera ${excl.reduce((s, e) => s + e[1], 0)} movimientos de otros agentes: ${txt}.`);
+    avisos.push(`${etiquetaRun(state.run)}: de los paneles cargados (todos los días) se dejaron afuera ${excl.reduce((s, e) => s + e[1], 0)} movimientos de otros agentes: ${txt}.`);
   }
   if (state.run.duplicadosDescartados) avisos.push(`Se descartaron ${state.run.duplicadosDescartados} movimientos que venían repetidos en más de un archivo u hoja.`);
   if (!state.run.panel.length) avisos.push('No hay movimientos de panel (fichas) cargados.');
@@ -1240,7 +1329,7 @@ function mapearColumnas(f) {
 
 async function exportar() {
   const run = state.run;
-  const titulo = `${run.ventana ? `Conciliación del día operativo ${fmtDate(run.ventana.from)}` : 'Conciliación'}${run.linea ? ` · Línea ${run.linea}` : ''}`;
+  const titulo = `${run.ventana ? `Conciliación del día operativo ${fmtDate(run.ventana.from)}` : 'Conciliación'}${etiquetaRun(run) ? ` · ${etiquetaRun(run)}` : ''}`;
   const buf = await exportarExcel({
     res: run.vista,
     resumenData: run.resumen,
@@ -1251,7 +1340,7 @@ async function exportar() {
     turnos: state.config.turnos,
     titulo,
   });
-  const nombre = `Conciliacion_${run.linea ? `${run.linea}_` : ''}${state.dia || isoDay(Date.now())}.xlsx`;
+  const nombre = `Conciliacion_${run.linea ? `${run.linea}_` : run.agentes ? `${run.agentes.join('-').replace(/[^\w.-]+/g, '_').slice(0, 60)}_` : ''}${state.dia || isoDay(Date.now())}.xlsx`;
   const p = await api.saveFile(nombre, new Uint8Array(buf), [{ name: 'Excel', extensions: ['xlsx'] }]);
   if (p) toast(`Guardado: ${p}`);
 }
@@ -1327,6 +1416,7 @@ document.addEventListener('click', async (e) => {
       refresh();
     } else if (d.act === 'quitar-todo') {
       state.fuentes = [];
+      state.agentesSel = null;
       state.manual = { forzados: [], estados: {}, rechazados: [] };
       state.sel.clear();
       state.dia = '';
@@ -1363,6 +1453,9 @@ document.addEventListener('click', async (e) => {
     } else if (d.configTab) {
       state.f.config = d.configTab;
       render();
+    } else if (d.act === 'agentes-todos' || d.act === 'agentes-ninguno') {
+      state.agentesSel = d.act === 'agentes-todos' ? agentesDePaneles(state.fuentes, state.config).map((a) => a.agente) : [];
+      refresh();
     } else if (d.act === 'linea-agregar') {
       state.config.lineas.push({ nombre: `Línea ${state.config.lineas.length + 1}`, agentes: [] });
       saveConfigSoon();
@@ -1429,7 +1522,14 @@ document.addEventListener('change', (e) => {
     parseFuente(f);
     f.activa = !!f.importerKey && (f.records.length > 0 || !!f.nombres);
     refresh();
+  } else if (t.dataset.agenteSel != null) {
+    const ags = agentesDePaneles(state.fuentes, state.config);
+    const sel = ags.filter((a) => (a.agente === t.dataset.agenteSel ? t.checked : agenteIncluido(a))).map((a) => a.agente);
+    state.agentesSel = sel;
+    refresh();
   } else if (t.dataset.lineaSelect != null) {
+    if (t.value === '__sel') return;
+    state.agentesSel = null;
     state.config.lineaActiva = t.value;
     saveConfigSoon();
     refresh();
