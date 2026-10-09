@@ -249,6 +249,17 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
     matches,
     rechazados
   );
+  // 3c) Capturas con turno que no encontraron par en su turno: se buscan en todo el día, pero
+  // solo si el nombre coincide (el turno pudo estar mal asignado). Quedan para revisar.
+  cruzarSinHora(
+    pLibres(),
+    billetera.filter((r) => r.sinHora && r.franjas && MATCHABLE.has(r.tipo) && !usados.has(r.id)).map((r) => ({ ...r, franjas: null, fueraDeTurno: r })),
+    params,
+    dicc,
+    usados,
+    matches,
+    rechazados
+  );
 
   // 4) Lo que quedó suelto se clasifica.
   const pendientes = [];
@@ -425,14 +436,16 @@ function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechaza
   for (const x of pares) {
     if (usados.has(x.p.id) || usados.has(x.w.id)) continue;
     const unico = candP.get(x.p.id) === 1 && candW.get(x.w.id) === 1;
-    if (!(x.rel === 'conocido' || x.rel === 'pista' || (unico && x.rel !== 'distinto'))) continue;
+    if (!(x.rel === 'conocido' || x.rel === 'pista' || (unico && x.rel !== 'distinto' && !x.w.fueraDeTurno))) continue;
     usados.add(x.p.id);
     usados.add(x.w.id);
     const estado = x.amount.tipo === 'bonificacion' ? ESTADOS.BONIFICACION : ESTADOS.CONCILIADO;
-    const nota = ['Captura sin hora', x.amount.tipo === 'bonificacion' ? `bonificación ${x.amount.pct}%` : ''].filter(Boolean).join(', ');
-    const m = buildMatch([x.p], [x.w], estado, nota);
+    const nota = ['Captura sin hora', x.w.fueraDeTurno ? 'fuera del turno indicado' : '', x.amount.tipo === 'bonificacion' ? `bonificación ${x.amount.pct}%` : ''].filter(Boolean).join(', ');
+    // El registro original (con su turno), no la copia usada para buscar en todo el día.
+    const w = x.w.fueraDeTurno || x.w;
+    const m = buildMatch([x.p], [w], estado, nota);
     m.demora = null;
-    m.confianza = x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
+    m.confianza = x.w.fueraDeTurno ? 'baja' : x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
     matches.push(m);
   }
 }

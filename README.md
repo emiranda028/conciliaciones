@@ -63,7 +63,8 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - **PDF con capturas** (por ejemplo, los que arma CamScanner): se eligen o arrastran igual que las
   imágenes. Se lee la captura de cada página, en orden, sin la marca de agua. El título del PDF
   ("REPORTE TM PPAY DAMIAN PERALTA") queda como billetera de esos movimientos, y si el nombre del
-  archivo o el título dice TM, TT o TN (o "turno 1/2/3"), los movimientos sin hora toman Turno 1, 2 o 3.
+  archivo o el título dice TM, TT o TN (o "turno 1/2/3"), los movimientos sin hora toman el turno
+  que cubre la mañana (10 h), la tarde (18 h) o la noche (2 h), sin importar cómo se llamen los turnos.
 - El texto se lee con OCR (Tesseract, en español) **en la misma computadora y sin conexión**. El
   lector y el idioma viajan dentro del `.exe`. La primera lectura tarda unos segundos; después,
   alrededor de 1 segundo por imagen.
@@ -96,7 +97,9 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   revisar. El número de operación evita cargar dos veces el mismo comprobante.
 - **Turno:** en la revisión se puede asignar un turno a todas las capturas o a cada fila. Para los
   movimientos sin hora, el cruce se limita a las horas de ese turno en vez de todo el día, y el turno
-  aparece en Pendientes y en el Excel. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
+  aparece en Pendientes y en el Excel. Si en su turno no aparece el par pero sí en otro horario del
+  mismo día con un nombre parecido (por ejemplo, "Axel Soria" y "Axeldos22"), se concilia igual como
+  "fuera del turno indicado" y queda en "Revisar", por si el turno se cargó mal. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
   y Turno 3 (22 a 06); se cambian en Configuración → Turnos y día.
 - Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
   siguiente), se cuenta una sola vez.

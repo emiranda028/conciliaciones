@@ -1,6 +1,6 @@
 // Resúmenes, tiempos de demora y exportación a Excel.
 import ExcelJS from 'exceljs';
-import { DIA, HORA, MIN, fmtDate, horaDe, fmtDuration, median, percentile, round2, parseTimeOfDay } from './util.js';
+import { DIA, HORA, MIN, fmtDate, horaDe, fmtDuration, median, percentile, round2, parseTimeOfDay, norm } from './util.js';
 import { ESTADOS } from './matcher.js';
 
 // Tres turnos de 8 horas alineados con el día operativo (06:00 a 06:00). Editables en Configuración.
@@ -41,6 +41,22 @@ export function turnoDe(ts, turnos = DEFAULT_TURNOS) {
     if (d < h ? tod >= d && tod < h : tod >= d || tod < h) return t.nombre;
   }
   return 'Sin turno';
+}
+
+// Turno escrito en el nombre de un archivo: TM / TT / TN (mañana, tarde, noche) o "turno 2".
+// Mañana, tarde y noche se buscan por la hora (10, 18 y 2), no por el orden de la lista,
+// así funciona aunque los turnos tengan otros nombres ("Turno 06 a 14") o estén en otro orden.
+export function turnoDeTexto(texto, turnos = DEFAULT_TURNOS) {
+  const s = ` ${String(texto || '').replace(/[_.\-]+/g, ' ')} `;
+  const m = /\sturno\s*(\d)\s/i.exec(s);
+  if (m) {
+    const exacto = turnos.find((t) => norm(t.nombre) === `turno${m[1]}`);
+    return exacto?.nombre || turnos[Number(m[1]) - 1]?.nombre || '';
+  }
+  const i = [/\s(tm|ma[nñ]ana)\s/i, /\s(tt|tarde)\s/i, /\s(tn|noche)\s/i].findIndex((re) => re.test(s));
+  if (i < 0) return '';
+  const t = turnoDe([10, 18, 2][i] * HORA, turnos);
+  return t === 'Sin turno' ? '' : t;
 }
 
 // Día operativo: de las HH del día elegido a las HH del día siguiente.

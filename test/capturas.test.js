@@ -426,3 +426,31 @@ test('renglón cortado arriba y dígito duplicado en el monto', () => {
     ]
   );
 });
+
+test('turno mal asignado: si el nombre coincide se concilia fuera del turno, para revisar', async () => {
+  const { turnoDeTexto, franjasTurno } = await import('../src/core/report.js');
+  // Turnos con otros nombres y en otro orden: TM/TT/TN se buscan por la hora.
+  const turnos = [
+    { nombre: 'Turno 22 a 06', desde: '22:00', hasta: '06:00' },
+    { nombre: 'Turno 06 a 14', desde: '06:00', hasta: '14:00' },
+    { nombre: 'Turno 14 a 22', desde: '14:00', hasta: '22:00' },
+  ];
+  assert.equal(turnoDeTexto('REPORTE TM PPAY', turnos), 'Turno 06 a 14');
+  assert.equal(turnoDeTexto('CAPTURAS_OFICINA_TT_07-10', turnos), 'Turno 14 a 22');
+  assert.equal(turnoDeTexto('capturas TN', turnos), 'Turno 22 a 06');
+
+  const dia = parseDateTime('07/10/2026, 00:00:00');
+  const franjas = (t) => franjasTurno(turnos.find((x) => x.nombre === t)).map(([d, h]) => [dia + d, dia + h]);
+  const W = (id, persona, monto, turno) => ({ id, lado: 'billetera', origen: 'X', cuenta: '', persona, tipo: 'COBRO', monto, ts: dia + 12 * 3600000, sinHora: true, franjas: franjas(turno) });
+  const P = (id, persona, h, monto) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Laoficina', persona, ts: parseDateTime(`07/10/2026, ${h}`), tipo: 'COBRO', monto });
+  const r = conciliar(
+    [P('p1', 'Axeldos22', '09:25:31', 5500), P('p2', 'otro77', '09:30:00', 4000)],
+    [W('w1', 'Axel Soria', 5500, 'Turno 22 a 06'), W('w2', 'Nadie Parecido', 4000, 'Turno 22 a 06')]
+  );
+  assert.deepEqual(
+    r.matches.map((m) => [m.panel[0].persona, m.billetera[0].persona, m.confianza, m.nota]),
+    [['Axeldos22', 'Axel Soria', 'baja', 'Captura sin hora, fuera del turno indicado']]
+  );
+  // Sin parecido de nombre no se cruza fuera del turno.
+  assert.ok(r.pendientes.some((p) => p.registro.id === 'w2'));
+});

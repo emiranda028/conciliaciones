@@ -22,7 +22,7 @@ import {
 import { parsearCaptura, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { imagenesDePdf } from '../core/pdf.js';
-import { exportarExcel, TRAMOS, turnoDe } from '../core/report.js';
+import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto } from '../core/report.js';
 import { ESTADOS, DEFAULT_PARAMS } from '../core/matcher.js';
 import { fmtDate, fmtTime, horaDe, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay, parseNumber } from '../core/util.js';
 import ExcelJS from 'exceljs';
@@ -408,15 +408,8 @@ afterRender.cargar = () => {
 // Capturas: imágenes sueltas o PDF con capturas adentro.
 const ES_IMAGEN = /\.(png|jpe?g|webp|bmp|pdf)$/i;
 
-// Turno escrito en el nombre del archivo o del PDF: TM / TT / TN (mañana, tarde, noche) o "turno 2".
-function turnoDeNombre(texto) {
-  const t = state.config.turnos;
-  const s = ` ${String(texto || '').replace(/[_.\-]+/g, ' ')} `;
-  const m = /\sturno\s*(\d)\s/i.exec(s);
-  if (m) return t[Number(m[1]) - 1]?.nombre || '';
-  const i = [/\s(tm|ma[nñ]ana)\s/i, /\s(tt|tarde)\s/i, /\s(tn|noche)\s/i].findIndex((re) => re.test(s));
-  return i >= 0 ? t[i]?.nombre || '' : '';
-}
+// Turno escrito en el nombre del archivo o del PDF: TM / TT / TN o "turno 2".
+const turnoDeNombre = (texto) => turnoDeTexto(texto, state.config.turnos);
 
 // Los PDF se abren en sus imágenes (una o más por página); las imágenes pasan como están.
 async function expandirPdfs(files, errores) {
