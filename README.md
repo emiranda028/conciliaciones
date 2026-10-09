@@ -99,7 +99,11 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   movimientos sin hora, el cruce se limita a las horas de ese turno en vez de todo el día, y el turno
   aparece en Pendientes y en el Excel. Si en su turno no aparece el par pero sí en otro horario del
   mismo día con un nombre parecido (por ejemplo, "Axel Soria" y "Axeldos22"), se concilia igual como
-  "fuera del turno indicado" y queda en "Revisar", por si el turno se cargó mal. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
+  "fuera del turno indicado" y queda en "Revisar", por si el turno se cargó mal.
+- Si en el turno hay un solo cobro (o pago) de ese monto de cada lado, se concilia aunque el titular
+  no sea el conocido para ese usuario, y queda en "Revisar". Las capturas repetidas (mismo titular y
+  monto) cuentan como una sola para decidir si es único. Un usuario que ya pagó desde dos o más
+  cuentas distintas no se penaliza por aparecer con una cuenta nueva. Los turnos de fábrica son Turno 1 (06 a 14), Turno 2 (14 a 22)
   y Turno 3 (22 a 06); se cambian en Configuración → Turnos y día.
 - Si las capturas se superponen (el mismo movimiento aparece al final de una y al principio de la
   siguiente), se cuenta una sola vez.

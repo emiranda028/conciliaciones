@@ -454,3 +454,26 @@ test('turno mal asignado: si el nombre coincide se concilia fuera del turno, par
   // Sin parecido de nombre no se cruza fuera del turno.
   assert.ok(r.pendientes.some((p) => p.registro.id === 'w2'));
 });
+
+test('sin hora: captura repetida y usuario que paga desde varias cuentas', () => {
+  const dia = parseDateTime('07/10/2026, 00:00:00');
+  const fr = [[dia + 6 * 3600000, dia + 14 * 3600000]];
+  const W = (id, persona, monto) => ({ id, lado: 'billetera', origen: 'X', cuenta: '', persona, tipo: 'COBRO', monto, ts: dia + 10 * 3600000, sinHora: true, franjas: fr, turno: 'Turno 06 a 14' });
+  const P = (id, persona, h, monto) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Ag', persona, ts: parseDateTime(`07/10/2026, ${h}`), tipo: 'COBRO', monto });
+  const diccionario = {
+    pulga7873: { usuario: 'pulga7873', nombres: { 'mirta isabel morelli': { nombre: 'Mirta Isabel Morelli', veces: 2 } } },
+    multi55: { usuario: 'multi55', nombres: { 'ana uno': { nombre: 'Ana Uno', veces: 3 }, 'beto dos': { nombre: 'Beto Dos', veces: 2 } } },
+  };
+  const r = conciliar(
+    [P('p1', 'pulga7873', '10:28:00', 9000), P('p2', 'multi55', '11:00:00', 12000), P('p3', 'otro1', '11:30:00', 12000)],
+    // La misma transferencia leída dos veces (capturas repetidas) cuenta como un solo candidato.
+    [W('w1', 'Alexis Prueba Lopez', 9000), W('w2', 'Alexis Prueba Lopez', 9000), W('w3', 'Carla Nueva', 12000)],
+    { diccionario }
+  );
+  const pares = Object.fromEntries(r.matches.map((m) => [m.panel[0].persona, [m.billetera[0].id, m.confianza]]));
+  // Único en su turno aunque el titular no sea el conocido: se concilia para revisar.
+  assert.deepEqual(pares.pulga7873, ['w1', 'baja']);
+  // 12000: dos usuarios posibles y ninguna pista: no se elige al azar.
+  assert.equal(pares.multi55, undefined);
+  assert.ok(r.pendientes.some((p) => p.registro.id === 'w2'));
+});

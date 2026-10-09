@@ -65,6 +65,8 @@ export function nameHint(usuario, nombre) {
       if (t.startsWith(l) || l.startsWith(t) || (l.length >= 5 && t.includes(l))) return true;
       // Un error de tipeo: "serio" ~ "sergio".
       if (l.length >= 5 && (lev(l, t.slice(0, l.length)) <= 1 || lev(l, t.slice(0, l.length + 1)) <= 1)) return true;
+      // Una letra de menos en un usuario corto: "daro" ~ "dario".
+      if (l.length === 4 && t.length >= 5 && lev(l, t.slice(0, 5)) === 1 && l[0] === t[0]) return true;
     }
   }
   return false;
@@ -92,7 +94,10 @@ function nameRelation(dicc, p, w) {
   const wk = nameKey(w.persona);
   if (known && Object.keys(known).length) {
     if (known[wk] || Object.keys(known).some((k) => mismoNombre(k, wk))) return 'conocido';
-    return nameHint(p.persona, w.persona) ? 'pista' : 'distinto';
+    if (nameHint(p.persona, w.persona)) return 'pista';
+    // Un usuario que ya pagó desde dos o más cuentas distintas puede usar otra más:
+    // un titular nuevo no cuenta en contra.
+    return Object.keys(known).length >= 2 ? null : 'distinto';
   }
   return nameHint(p.persona, w.persona) ? 'pista' : null;
 }
@@ -428,17 +433,24 @@ function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechaza
       pares.push({ p, w, amount, rel, score });
     }
   }
+  // Candidatos únicos: movimientos idénticos (mismo titular y monto, por ejemplo una captura
+  // repetida) cuentan como uno solo.
+  const grupoW = (w) => `${nameKey(w.persona)}|${w.monto}|${w.tipo}|${w.turno || ''}`;
+  const grupoP = (p) => `${norm(p.persona)}|${p.monto}|${p.tipo}`;
   const candP = new Map();
   const candW = new Map();
   for (const x of pares) {
-    candP.set(x.p.id, (candP.get(x.p.id) || 0) + 1);
-    candW.set(x.w.id, (candW.get(x.w.id) || 0) + 1);
+    if (!candP.has(x.p.id)) candP.set(x.p.id, new Set());
+    if (!candW.has(x.w.id)) candW.set(x.w.id, new Set());
+    candP.get(x.p.id).add(grupoW(x.w));
+    candW.get(x.w.id).add(grupoP(x.p));
   }
   pares.sort((a, b) => b.score - a.score);
   for (const x of pares) {
     if (usados.has(x.p.id) || usados.has(x.w.id)) continue;
-    const unico = candP.get(x.p.id) === 1 && candW.get(x.w.id) === 1;
-    if (!(x.rel === 'conocido' || x.rel === 'pista' || (unico && x.rel !== 'distinto' && !x.w.fueraDeTurno))) continue;
+    const unico = candP.get(x.p.id).size === 1 && candW.get(x.w.id).size === 1;
+    // Único en su turno: se concilia aunque el titular no sea el conocido, pero para revisar.
+    if (!(x.rel === 'conocido' || x.rel === 'pista' || (unico && !x.w.fueraDeTurno))) continue;
     usados.add(x.p.id);
     usados.add(x.w.id);
     const estado = x.amount.tipo === 'bonificacion' ? ESTADOS.BONIFICACION : ESTADOS.CONCILIADO;
@@ -447,7 +459,7 @@ function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechaza
     const w = x.w.fueraDeTurno || x.w;
     const m = buildMatch([x.p], [w], estado, nota);
     m.demora = null;
-    m.confianza = x.w.fueraDeTurno ? 'baja' : x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
+    m.confianza = x.w.fueraDeTurno || x.rel === 'distinto' ? 'baja' : x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
     matches.push(m);
   }
 }

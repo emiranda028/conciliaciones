@@ -251,6 +251,8 @@ test('pista por nombre: usuario parecido al titular', () => {
   assert.ok(nameHint('Mar30tin', 'Martin Esmoli'));
   assert.ok(nameHint('estrella10azar', 'Estrella Eileén Gonzalez'));
   assert.ok(!nameHint('Mar30tin', 'Lucia Gomez'));
+  assert.ok(nameHint('daro5866', 'DARIO DAMIAN LAN'));
+  assert.ok(!nameHint('daro5866', 'Dora Lopez'));
   assert.ok(nameHint('serio1920', 'Sergio Fariña'));
   assert.ok(!nameHint('0367xx', 'Hugo Escobar'));
 });
