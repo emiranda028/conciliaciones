@@ -402,3 +402,27 @@ test('el signo del monto manda: "TRANSFERENCIA CVU/CBU - $" es pago aunque abajo
     ]
   );
 });
+
+test('renglón cortado arriba y dígito duplicado en el monto', () => {
+  const lines = [
+    linea(40, [[30, 'Cc']]),
+    { ...linea(80, [[0, '- <— IAN 1LNZADNOZ LINCINLIZ NX YE DINIZXIN 3.000 00 -']]), confidence: 34 },
+    linea(106, [[124, '— FABRIZIO PRUEBA y y']]),
+    linea(150, [[124, 'CARGA TRANSFERENCIA DE']]),
+    linea(176, [[60, '<-'], [420, '$ 6.000,00']]),
+    linea(202, [[124, '— ROQUE PRUEBA SANCHEZ']]),
+    linea(260, [[60, 'E)'], [124, 'TRANSFERENCIA CVU/CBU'], [420, '- $ 1550.000,00']]),
+    linea(320, [[124, 'CARGA TRANSFERENCIA DE']]),
+    linea(346, [[60, '=='], [420, '$ 10.000,00']]),
+    linea(372, [[124, '— GINA INVENTADA LARENTI']]),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY, fechaDefecto: '07/10/2026' }).slice(0, 3);
+  assert.deepEqual(
+    filas.map((f) => [f.nombre, f.tipo, f.monto, f.dudoso]),
+    [
+      ['FABRIZIO PRUEBA', 'COBRO', 3000, true],
+      ['ROQUE PRUEBA SANCHEZ', 'COBRO', 6000, false],
+      ['TRANSFERENCIA CVU/CBU', 'PAGO', 150000, true],
+    ]
+  );
+});

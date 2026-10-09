@@ -79,11 +79,23 @@ function mk(base) {
 // ---------------------------------------------------------------------------
 // Panel BETS (export "User Transactions"): dos filas por operación (jugador y agente).
 // Nos quedamos con la del jugador.
+const BETS_HEADER = ['Transaction Group Id', 'Transaction ID', 'ID', 'Date', 'Amount', 'Notes', 'Transaction Type', 'Owner Type', 'Wallet Type', 'Before', 'After', 'Owner ID', 'Owner Name', 'User ID', 'UserName', 'Associated Transaction ID', 'Associated Transaction Time', 'Associated Transaction Type'];
+
+// Algunos exports vienen sin la fila de títulos: se reconocen por la forma de los datos
+// ("07.10.2026 14:24:08.381", "PlayerDepositFromBalance", "Player"/"Agent") y se agregan los títulos.
+function betsConEncabezado(rows) {
+  const datos = rows.filter((r) => r.length >= 15).slice(0, 5);
+  const esBets = (r) => /^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/.test(String(r[3]).trim()) && /^(player|agent)/i.test(String(r[6]).trim()) && /^(player|agent)$/i.test(String(r[7]).trim());
+  if (!datos.length || !datos.every(esBets) || !esBets(rows[0])) return rows;
+  return [BETS_HEADER, ...rows];
+}
+
 const bets = {
   key: 'BETS',
   label: 'Panel BETS (User Transactions)',
   lado: LADO.PANEL,
   detect(rows) {
+    rows = betsConEncabezado(rows);
     return findHeader(rows, {
       tipo: 'transactiontype',
       owner: 'ownertype',
@@ -95,6 +107,7 @@ const bets = {
       : 0;
   },
   parse(rows) {
+    rows = betsConEncabezado(rows);
     const h = findHeader(rows, {
       tipo: 'transactiontype',
       owner: 'ownertype',

@@ -10,7 +10,7 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
 
    | Formato | Lado | Cómo se reconoce |
    | --- | --- | --- |
-   | BETS: export "User Transactions" (.csv/.xlsx) | Panel | Columnas `Transaction Type`, `Owner Type`… Se usa solo la fila del jugador. |
+   | BETS: export "User Transactions" (.csv/.xlsx) | Panel | Columnas `Transaction Type`, `Owner Type`… Se usa solo la fila del jugador. También sin fila de títulos o con cada renglón entre comillas. |
    | GANEMOS: copiado de la web (8 renglones por movimiento) | Panel | Se puede pegar directo en la app o cargar la planilla. |
    | ZEUS: tabla Nro / Fecha / Operación / Agente / Destino / Depósito / Retiro | Panel | En los retiros el jugador figura en "Agente". |
    | Base plana DIA / HORA / Operación / agente / NOMBRE / MONTO | Panel | Planillas ya armadas a mano. |
@@ -80,6 +80,9 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - **Cobro o pago:** manda el signo del monto ("- $ 95.000,00" es pago, "+ $ 5.000,00" es cobro). Si no
   tiene signo, se decide por la leyenda ("Te enviaron dinero", "CARGA TRANSFERENCIA DE"…). Si el signo y
   la leyenda se contradicen, la fila queda para revisar.
+- **Renglones cortados:** si el movimiento de arriba de la captura quedó cortado pero el monto se ve,
+  se rescata igual (marcado para revisar, porque el nombre puede estar incompleto). Si el OCR lee un
+  dígito de más en el monto ("1550.000,00"), se corrige ("150.000,00") y la fila queda para revisar.
 - Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
   en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
   confunda el "$" con un número.

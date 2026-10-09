@@ -394,3 +394,21 @@ test('líneas: solo se concilian los agentes de la línea elegida', async () => 
   assert.deepEqual(sel.agentes, ['AgenteZ', 'agent01']);
   assert.deepEqual(sel.excluidosLinea, { agenteb: 1 });
 });
+
+test('BETS sin fila de títulos y con cada renglón entre comillas', async () => {
+  const { parseCsv } = await import('../src/core/tabular.js');
+  const { detect } = await import('../src/core/importers.js');
+  const txt = [
+    '"1,11,101,""07.10.2026 14:24:08.381"",500000.00000000,Player deposit from balance,PlayerDepositFromBalance,Player,Balance,0,0,4,jugador1,9,AgentePrueba,,,"',
+    '"2,12,102,""07.10.2026 14:24:17.439"",-5000.00000000,Player withdrawal to balance,PlayerWithdrawalToBalance,Player,Balance,0,0,4,jugador1,9,AgentePrueba,,,"',
+  ].join('\n');
+  const rows = parseCsv(txt);
+  assert.equal(rows[0].length, 18);
+  const imp = detect(rows);
+  assert.equal(imp?.key, 'BETS');
+  const { records } = imp.parse(rows);
+  assert.deepEqual(records.map((r) => [r.tipo, r.monto, r.persona, r.cuenta]), [
+    ['COBRO', 500000, 'jugador1', 'AgentePrueba'],
+    ['PAGO', 5000, 'jugador1', 'AgentePrueba'],
+  ]);
+});

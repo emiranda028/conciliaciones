@@ -6,10 +6,12 @@
 //            Transferencia recibida                     28/09
 import { nameTokens, parseNumber } from './util.js';
 
-const MONEY = /([+\-−–]?)\s*\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/;
+// El grupo de miles admite 4 cifras ("1550.000,00"): el OCR a veces duplica un dígito.
+const MONEY = /([+\-−–]?)\s*\$\s*(\d{1,4}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/;
 // Si el OCR no vio el "$" (a veces lo lee como 8, S o §), se toma el importe al final
 // del renglón y la fila queda marcada para revisar.
-const MONEY_SIN_SIGNO = /([+\-−–]?)\s*([8S§])?(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+// También "3.000 00" (la coma perdida en un renglón cortado).
+const MONEY_SIN_SIGNO = /([+\-−–]?)\s*([8S§])?(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,3}(?:\.\d{3})+ \d{2})[\s—–-]*$/;
 const PALABRA_MONTO = /^[+\-−–]?[$8S§]?[\d.]+,\d{1,2}$/;
 
 // Tipo según el signo del monto ("- $ 95.000,00" sale, "+ $ 5.000,00" entra), o null si no tiene.
@@ -23,10 +25,11 @@ function tipoPorSigno(m) {
 
 // Tipo del movimiento: manda el signo del monto; si no hay, la leyenda. Si se contradicen,
 // o no hay ninguno de los dos, la fila queda para revisar.
-function tipoMovimiento(m, textoTipo) {
+// porDefecto: en las listas donde los pagos llevan "-", un monto sin signo ni leyenda es cobro.
+function tipoMovimiento(m, textoTipo, porDefecto = 'PAGO') {
   const signo = tipoPorSigno(m);
   const leyenda = COBRO_RE.test(textoTipo) ? 'COBRO' : PAGO_RE.test(textoTipo) ? 'PAGO' : null;
-  return { tipo: signo || leyenda || 'PAGO', dudoso: !(signo || leyenda) || (signo && leyenda && signo !== leyenda) || !!m.dudoso };
+  return { tipo: signo || leyenda || porDefecto, dudoso: !(signo || leyenda) || (signo && leyenda && signo !== leyenda) || !!m.dudoso };
 }
 
 function buscarMonto(text) {
@@ -35,8 +38,20 @@ function buscarMonto(text) {
   return r;
 }
 
+// "1550.000,00": un grupo de miles de 4 cifras no existe. Si tiene un dígito repetido se saca
+// uno ("150.000,00"); la fila queda siempre para revisar.
+function corregirMiles(txt) {
+  const m = /^(\d{4})(\..*)$/.exec(txt);
+  if (!m) return null;
+  const g = m[1];
+  const i = [0, 1, 2].find((k) => g[k] === g[k + 1]);
+  return (i == null ? g.slice(1) : g.slice(0, i) + g.slice(i + 1)) + m[2];
+}
+
 function buscarMontoTexto(text) {
   const m = text.match(MONEY);
+  const corregido = m && corregirMiles(m[2]);
+  if (corregido) return { signo: m[1], monto: parseNumber(corregido), index: m.index, dudoso: true };
   // "$ 12:14": el ícono de la billetera leído como "$" delante de la hora; no es un monto.
   if (m && /^:\d{2}/.test(text.slice(m.index + m[0].length))) return null;
   if (m) {
@@ -50,7 +65,7 @@ function buscarMontoTexto(text) {
     return { signo: m[1], monto: parseNumber(m[2]), index: m.index, dudoso: raro };
   }
   const f = text.match(MONEY_SIN_SIGNO);
-  if (f) return { signo: f[1], monto: parseNumber(f[3]), index: f.index, dudoso: true };
+  if (f) return { signo: f[1], monto: parseNumber(f[3].replace(/ (\d{2})$/, ',$1')), index: f.index, dudoso: true };
   return null;
 }
 
@@ -182,6 +197,11 @@ function limpiarNombre(txt) {
   s = s.replace(/(\.{2,}|…)\s*[—–-]?\s*$/, '').replace(/[\s—–-]+$/, '').trim();
   // Restos del ícono a la izquierda: "7", "y )", "»", "A", "V".
   const toks = s.split(' ');
+  // Y basura a la derecha ("FABRIZIO MOLINA y y"); una inicial en mayúscula ("Oscar L") se deja.
+  while (toks.length > 1 && /^([a-zñ]|[^A-Za-zÁÉÍÓÚÑáéíóúñ]+)$/.test(toks[toks.length - 1])) toks.pop();
+  // "Raul Victor Jaime < O": un símbolo suelto seguido solo de letras sueltas.
+  const sim = toks.findIndex((t, i) => i > 0 && /^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+$/.test(t) && toks.slice(i + 1).every((x) => x.length <= 1));
+  if (sim > 0) toks.splice(sim);
   while (toks.length > 1 && (toks[0].length <= 1 || !/[a-záéíóúñ]{2,}/i.test(toks[0]))) toks.shift();
   // Iniciales del avatar ("JP Juan Perez", "Pp Pedro…"): letras que coinciden con el inicio del nombre.
   if (toks.length > 2 && toks[0].length <= 3 && /^[a-záéíóúñ]+$/i.test(toks[0])) {
@@ -260,8 +280,11 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     } else nombreTxt = l.text.slice(0, m.index);
     nombreTxt = nombreTxt.replace(MONEY, '').replace(/[+\-−–]?\$[\d.,]*$/, '').replace(MONEY_SIN_SIGNO, '');
     const { nombre, truncado } = limpiarNombre(nombreTxt);
-    if (enMedio && sinTexto(nombre)) {
-      const arriba = textoVecino(i - 1);
+    // Un renglón de leyenda cortado arriba de la captura se lee como basura (confianza baja).
+    const cortado = l.confidence != null && l.confidence < 50;
+    if (enMedio && (sinTexto(nombre) || cortado)) {
+      const vecino = textoVecino(i - 1);
+      const arriba = sinTexto(vecino) || (ls[i - 1]?.confidence ?? 100) < 50 ? '' : vecino;
       const abajo = textoVecino(i + 1);
       const junto = `${arriba} ${abajo}`.replace(/\s+/g, ' ').trim();
       // "CARGA TRANSFERENCIA DE BRIAN" / "FABRIZIO MOLINA": la leyenda termina en "de"/"a".
@@ -270,7 +293,9 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       if (quien) {
         const c = limpiarNombre(quien);
         const textoTipo = ley || '';
-        const { tipo, dudoso } = tipoMovimiento(m, textoTipo);
+        const r = tipoMovimiento(m, textoTipo, 'COBRO');
+        const { tipo } = r;
+        const dudoso = r.dudoso || cortado;
         const fecha = ultimaFecha || fechaDefecto;
         filas.push({
           fecha,

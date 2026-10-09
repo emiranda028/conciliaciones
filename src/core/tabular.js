@@ -50,7 +50,13 @@ export function parseCsv(text) {
     row.push(cell);
     rows.push(row);
   }
-  return rows.filter((r) => r.some((c) => c !== ''));
+  const out = rows.filter((r) => r.some((c) => c !== ''));
+  // Cada renglón entero entre comillas ("108647757,109758685,""07.10.2026 …"",…"): queda una sola
+  // celda con todo adentro. Se vuelve a separar.
+  if (out.length && out.every((r) => r.filter((c) => c !== '').length === 1) && out.every((r) => /[,;\t]/.test(r.find((c) => c !== '')))) {
+    return parseCsv(out.map((r) => r.find((c) => c !== '')).join('\n'));
+  }
+  return out;
 }
 
 // Decodifica bytes de un CSV: UTF-8 si es válido, si no Windows-1252 (Excel en español).
