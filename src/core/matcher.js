@@ -55,6 +55,8 @@ export function nameHint(usuario, nombre) {
     .replace(/[̀-ͯ]/g, '')
     .match(/[a-z]+/g);
   if (!letters) return false;
+  // También las letras juntas, sin los números intercalados: "mar30tin" -> "martin".
+  if (letters.length > 1) letters.push(letters.join(''));
   const toks = nameTokens(nombre);
   for (const l of letters) {
     if (l.length < 4) continue;
