@@ -379,3 +379,26 @@ test('leyendas de transferencia con letras mal leídas también se omiten', asyn
   for (const t of ['Iransferencia recibida', 'Te envlaron dinero', 'ls Transferencia enviada', 'Transferenciarecibida', 'PA Transferencia enviada']) assert.equal(leyendaVisible(t), '', t);
   for (const t of ['Pago con QR', 'Rendimientos', 'CARGA TRANSFERENCIA DE', 'Liquidación de dinero']) assert.equal(leyendaVisible(t), t);
 });
+
+test('el signo del monto manda: "TRANSFERENCIA CVU/CBU - $" es pago aunque abajo diga "CARGA TRANSFERENCIA DE"', () => {
+  const lines = [
+    linea(150, [[124, 'CARGA TRANSFERENCIA DE']]),
+    linea(176, [[60, '<-'], [420, '$ 6.000,00']]),
+    linea(202, [[124, '— ROQUE PRUEBA SANCHEZ']]),
+    linea(260, [[60, 'É'], [124, 'TRANSFERENCIA CVU/CBU'], [420, '- $95.000,00']]),
+    linea(320, [[124, 'CARGA TRANSFERENCIA DE']]),
+    linea(346, [[60, '<='], [420, '$ 30.000,00']]),
+    linea(372, [[124, '— SONIA INVENTADA RUIZ']]),
+    linea(430, [[124, 'Marcelino Ruben Ovie.. 07n0/2026'], [420, '+$ 20.000,00']]),
+  ];
+  const filas = parsearCaptura(lines, { hoy: HOY, fechaDefecto: '07/10/2026' });
+  assert.deepEqual(
+    filas.map((f) => [f.nombre, f.truncado, f.tipo, f.monto, f.dudoso]),
+    [
+      ['ROQUE PRUEBA SANCHEZ', false, 'COBRO', 6000, false],
+      ['TRANSFERENCIA CVU/CBU', false, 'PAGO', 95000, false],
+      ['SONIA INVENTADA RUIZ', false, 'COBRO', 30000, false],
+      ['Marcelino Ruben Ovie', true, 'COBRO', 20000, false],
+    ]
+  );
+});

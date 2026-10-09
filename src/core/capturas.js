@@ -12,7 +12,30 @@ const MONEY = /([+\-−–]?)\s*\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d
 const MONEY_SIN_SIGNO = /([+\-−–]?)\s*([8S§])?(\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
 const PALABRA_MONTO = /^[+\-−–]?[$8S§]?[\d.]+,\d{1,2}$/;
 
+// Tipo según el signo del monto ("- $ 95.000,00" sale, "+ $ 5.000,00" entra), o null si no tiene.
+// Una flecha del ícono pegada al monto ("<- $ 6.000,00") no cuenta como signo.
+function tipoPorSigno(m) {
+  if (m.flecha) return null;
+  if (m.signo === '+') return 'COBRO';
+  if (/[-−–]/.test(m.signo)) return 'PAGO';
+  return null;
+}
+
+// Tipo del movimiento: manda el signo del monto; si no hay, la leyenda. Si se contradicen,
+// o no hay ninguno de los dos, la fila queda para revisar.
+function tipoMovimiento(m, textoTipo) {
+  const signo = tipoPorSigno(m);
+  const leyenda = COBRO_RE.test(textoTipo) ? 'COBRO' : PAGO_RE.test(textoTipo) ? 'PAGO' : null;
+  return { tipo: signo || leyenda || 'PAGO', dudoso: !(signo || leyenda) || (signo && leyenda && signo !== leyenda) || !!m.dudoso };
+}
+
 function buscarMonto(text) {
+  const r = buscarMontoTexto(text);
+  if (r && r.signo && r.index > 0 && /[<=←]/.test(text[r.index - 1])) r.flecha = true;
+  return r;
+}
+
+function buscarMontoTexto(text) {
   const m = text.match(MONEY);
   // "$ 12:14": el ícono de la billetera leído como "$" delante de la hora; no es un monto.
   if (m && /^:\d{2}/.test(text.slice(m.index + m[0].length))) return null;
@@ -153,8 +176,10 @@ export function inferirFecha(dia, mes, anio, hoy = new Date()) {
 
 function limpiarNombre(txt) {
   let s = txt.replace(/[|_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  const truncado = /(\.\.\.|…)\s*[—–-]?\s*$/.test(s);
-  s = s.replace(/(\.\.\.|…)\s*[—–-]?\s*$/, '').replace(/[\s—–-]+$/, '').trim();
+  // Restos de la fecha mal leída al final ("Marcelino Ruben Ovie.. 07n0/2026").
+  s = s.replace(/\s+\S*\d\S*\/\d{2,4}$/, '');
+  const truncado = /(\.{2,}|…)\s*[—–-]?\s*$/.test(s);
+  s = s.replace(/(\.{2,}|…)\s*[—–-]?\s*$/, '').replace(/[\s—–-]+$/, '').trim();
   // Restos del ícono a la izquierda: "7", "y )", "»", "A", "V".
   const toks = s.split(' ');
   while (toks.length > 1 && (toks[0].length <= 1 || !/[a-záéíóúñ]{2,}/i.test(toks[0]))) toks.shift();
@@ -245,8 +270,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       if (quien) {
         const c = limpiarNombre(quien);
         const textoTipo = ley || '';
-        const tipo = COBRO_RE.test(textoTipo) ? 'COBRO' : PAGO_RE.test(textoTipo) ? 'PAGO' : m.signo === '-' || m.signo === '−' || m.signo === '–' ? 'PAGO' : 'COBRO';
-        const dudoso = !(COBRO_RE.test(textoTipo) || PAGO_RE.test(textoTipo)) || (m.signo === '+' && tipo === 'PAGO') || m.dudoso;
+        const { tipo, dudoso } = tipoMovimiento(m, textoTipo);
         const fecha = ultimaFecha || fechaDefecto;
         filas.push({
           fecha,
@@ -264,7 +288,10 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     }
     // Detalle: renglones siguientes hasta el próximo monto.
     let detalle = '';
-    for (let j = i + 1; j < ls.length && j <= i + 2 && !buscarMonto(ls[j].text) && !esEncabezadoFecha(ls[j].text); j += 1) detalle += ` ${ls[j].text}`;
+    // En el formato D, un movimiento de un solo renglón ("TRANSFERENCIA CVU/CBU - $ 95.000,00")
+    // no tiene detalle: los renglones de abajo son del movimiento siguiente.
+    const limite = enMedio ? i : i + 2;
+    for (let j = i + 1; j < ls.length && j <= limite && !buscarMonto(ls[j].text) && !esEncabezadoFecha(ls[j].text); j += 1) detalle += ` ${ls[j].text}`;
     detalle = detalle.trim();
     let fecha = fechaEnTexto(detalle, hoy) || fechaEnTexto(l.text.slice(0, m.index), hoy) || ultimaFecha || fechaDefecto;
     if (fecha) ultimaFecha = fecha;
@@ -297,15 +324,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       truncadoFinal = c.truncado;
       textoTipo = nombre;
     }
-    let tipo;
-    let dudoso = false;
-    if (COBRO_RE.test(textoTipo)) tipo = 'COBRO';
-    else if (PAGO_RE.test(textoTipo)) tipo = 'PAGO';
-    else {
-      tipo = m.signo === '+' ? 'COBRO' : 'PAGO';
-      dudoso = true;
-    }
-    if ((m.signo === '+' && tipo === 'PAGO') || m.dudoso) dudoso = true;
+    const { tipo, dudoso } = tipoMovimiento(m, textoTipo);
     filas.push({
       fecha,
       hora,
@@ -314,7 +333,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       monto,
       truncado: truncadoFinal,
       leyenda: leyendaVisible(leyendaTxt),
-      dudoso: dudoso || fechaSupuesta || !fecha || !nombreFinal || (l.confidence != null && l.confidence < 60),
+      dudoso: dudoso || fechaSupuesta || !fecha || !nombreFinal || esLeyendaTransferencia(nombreFinal) || (l.confidence != null && l.confidence < 60),
       imagen,
     });
   }
