@@ -87,6 +87,8 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
   en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
   confunda el "$" con un número.
+- Mercado Pago en la compu ("Actividad"): titular arriba con la hora, y abajo la leyenda, el estado
+  ("Aprobado", "Dinero disponible") y el monto. El estado no se toma como parte del nombre.
 - Mercado Pago: lee los encabezados de fecha ("Hoy", "Ayer", "Lunes 5 de octubre"), la hora de cada
   movimiento y los montos sin centavos. "Hoy" y "Ayer" se calculan con la fecha del archivo de la
   captura. Si los centavos chiquitos no se pueden leer, la fila queda para revisar.

@@ -65,6 +65,8 @@ export function nameHint(usuario, nombre) {
       if (t.startsWith(l) || l.startsWith(t) || (l.length >= 5 && t.includes(l))) return true;
       // Un error de tipeo: "serio" ~ "sergio".
       if (l.length >= 5 && (lev(l, t.slice(0, l.length)) <= 1 || lev(l, t.slice(0, l.length + 1)) <= 1)) return true;
+      // Usuario armado con pedazos del nombre: "franlopez" contiene "lopez", "nahugimenez" contiene "gimene".
+      if (t.length >= 5 && l.length > t.length && l.includes(t)) return true;
       // Una letra de menos en un usuario corto: "daro" ~ "dario".
       if (l.length === 4 && t.length >= 5 && lev(l, t.slice(0, 5)) === 1 && l[0] === t[0]) return true;
     }

@@ -160,6 +160,15 @@ const normLeyenda = (s) =>
     .toLowerCase()
     .replace(/[^a-z]+/g, ' ')
     .trim();
+// Estado y origen del dinero que muestra Mercado Pago en la compu ("Aprobado", "Dinero
+// disponible"), con los íconos que el OCR lee como letras sueltas ("O", "G", "€").
+function sinEstado(t) {
+  return String(t || '')
+    .replace(/(?:^|\s)\S?\s*(dinero disponible|aprobad[oa]|rechazad[oa]|pendiente|cancelad[oa]|en proceso)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // La leyenda de transferencia ocupa el lugar del titular (el OCR a veces junta las palabras).
 const OMITIDAS_JUNTAS = new Set(LEYENDAS_OMITIDAS.map((x) => normLeyenda(x).replace(/ /g, '')));
 const esLeyendaTransferencia = (s) => {
@@ -199,6 +208,8 @@ function limpiarNombre(txt) {
   const toks = s.split(' ');
   // Y basura a la derecha ("FABRIZIO MOLINA y y"); una inicial en mayúscula ("Oscar L") se deja.
   while (toks.length > 1 && /^([a-zñ]|[^A-Za-zÁÉÍÓÚÑáéíóúñ]+)$/.test(toks[toks.length - 1])) toks.pop();
+  // Restos del avatar: "ta Alejandra Antonia…".
+  if (toks.length > 2 && /^[a-zñ]{1,2}$/.test(toks[0]) && /^[A-ZÁÉÍÓÚÑ]/.test(toks[1])) toks.shift();
   // "Raul Victor Jaime < O": un símbolo suelto seguido solo de letras sueltas.
   const sim = toks.findIndex((t, i) => i > 0 && /^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+$/.test(t) && toks.slice(i + 1).every((x) => x.length <= 1));
   if (sim > 0) toks.splice(sim);
@@ -259,15 +270,23 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
 
   const filas = [];
   let ultimaFecha = '';
+  // Para el formato E: último renglón con monto y último encabezado de fecha.
+  let anteriorMonto = -1;
+  let anteriorFecha = -1;
   for (let i = 0; i < ls.length; i += 1) {
     const l = ls[i];
     const m = buscarMonto(l.text);
     if (!m) {
       // Encabezados de fecha entre movimientos ("Hoy", "Ayer", "5 de octubre").
       const fh = fechaEnTexto(l.text, hoy);
-      if (fh) ultimaFecha = fh;
+      if (fh) {
+        ultimaFecha = fh;
+        anteriorFecha = i;
+      }
       continue;
     }
+    const desdeArriba = Math.max(anteriorMonto, anteriorFecha) + 1;
+    anteriorMonto = i;
     const { monto } = m;
     if (monto == null || monto === 0) continue;
     // Nombre: palabras a la izquierda del monto, sin el ícono.
@@ -278,7 +297,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
         .map((w) => w.text)
         .join(' ');
     } else nombreTxt = l.text.slice(0, m.index);
-    nombreTxt = nombreTxt.replace(MONEY, '').replace(/[+\-−–]?\$[\d.,]*$/, '').replace(MONEY_SIN_SIGNO, '');
+    nombreTxt = sinEstado(nombreTxt.replace(MONEY, '').replace(/[+\-−–]?\$[\d.,]*$/, '').replace(MONEY_SIN_SIGNO, ''));
     const { nombre, truncado } = limpiarNombre(nombreTxt);
     // Un renglón de leyenda cortado arriba de la captura se lee como basura (confianza baja).
     const cortado = l.confidence != null && l.confidence < 50;
@@ -311,11 +330,32 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
         continue;
       }
     }
+    // Formato E (Mercado Pago en la compu, "Actividad"): titular arriba (con la hora) y
+    // leyenda + estado + monto abajo. El titular es el renglón de texto entre el movimiento
+    // anterior (o el encabezado de fecha) y este.
+    let arriba = null;
+    // Si abajo viene "de …"/"a …", es el formato B (Personal Pay), no este.
+    const debajo = ls[i + 1] && !conMonto[i + 1] ? ls[i + 1].text.replace(FECHA, ' ').replace(HORA_RE, ' ').trim() : '';
+    if (esLeyendaTransferencia(nombre) && !contraparte(debajo, true)) {
+      for (let j = desdeArriba; j < i && !arriba; j += 1) {
+        const t = sinEstado(ls[j].text.replace(HORA_RE, ' '));
+        const c = limpiarNombre(t);
+        const palabras = c.nombre.split(' ');
+        const largas = palabras.filter((x) => /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(x)).length;
+        // Un nombre: dos o más palabras y la mayoría de verdad (no la barra de estado del celular).
+        const pareceNombre = largas >= 2 && largas * 2 >= palabras.length && (ls[j].confidence ?? 100) >= 50;
+        if (pareceNombre && !esLeyendaTransferencia(c.nombre) && !COBRO_RE.test(c.nombre) && !PAGO_RE.test(c.nombre)) arriba = c;
+      }
+      if (arriba) {
+        const hr = ls.slice(desdeArriba, i).map((x) => x.text.match(HORA_RE)).find(Boolean);
+        arriba.hora = hr ? `${String(hr[1]).padStart(2, '0')}:${hr[2]}${hr[3] ? `:${hr[3]}` : ''}` : '';
+      }
+    }
     // Detalle: renglones siguientes hasta el próximo monto.
     let detalle = '';
     // En el formato D, un movimiento de un solo renglón ("TRANSFERENCIA CVU/CBU - $ 95.000,00")
     // no tiene detalle: los renglones de abajo son del movimiento siguiente.
-    const limite = enMedio ? i : i + 2;
+    const limite = enMedio || arriba ? i : i + 2;
     for (let j = i + 1; j < ls.length && j <= limite && !buscarMonto(ls[j].text) && !esEncabezadoFecha(ls[j].text); j += 1) detalle += ` ${ls[j].text}`;
     detalle = detalle.trim();
     let fecha = fechaEnTexto(detalle, hoy) || fechaEnTexto(l.text.slice(0, m.index), hoy) || ultimaFecha || fechaDefecto;
@@ -323,7 +363,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     // Hora, si la billetera la muestra ("13:45", "13:45 hs").
     const sinFecha = (x) => x.replace(FECHA, ' ');
     const h = sinFecha(detalle).match(HORA_RE) || sinFecha(nombreTxt).match(HORA_RE);
-    const hora = h ? `${String(h[1]).padStart(2, '0')}:${h[2]}${h[3] ? `:${h[3]}` : ''}` : '';
+    const hora = arriba ? arriba.hora : h ? `${String(h[1]).padStart(2, '0')}:${h[2]}${h[3] ? `:${h[3]}` : ''}` : '';
     // Solo la hora y ningún día arriba: las billeteras muestran así los movimientos de hoy.
     // Se toma el día de la captura y la fila queda para revisar.
     let fechaSupuesta = false;
@@ -342,7 +382,12 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     const resto = sinFecha(detalle).replace(HORA_RE, ' ').trim();
     const nombreEsLeyenda = esLeyendaTransferencia(nombre);
     const otro = contraparte(resto, nombreEsLeyenda);
-    if (otro || (nombreEsLeyenda && resto && !COBRO_RE.test(resto) && !PAGO_RE.test(resto))) {
+    if (arriba) {
+      leyendaTxt = nombre;
+      nombreFinal = arriba.nombre;
+      truncadoFinal = arriba.truncado;
+      textoTipo = nombre;
+    } else if (otro || (nombreEsLeyenda && resto && !COBRO_RE.test(resto) && !PAGO_RE.test(resto))) {
       const c = limpiarNombre(otro || resto);
       leyendaTxt = nombre;
       nombreFinal = c.nombre;

@@ -477,3 +477,26 @@ test('sin hora: captura repetida y usuario que paga desde varias cuentas', () =>
   assert.equal(pares.multi55, undefined);
   assert.ok(r.pendientes.some((p) => p.registro.id === 'w2'));
 });
+
+test('Mercado Pago en la compu (Actividad): titular arriba con la hora, leyenda y estado con el monto', () => {
+  const lines = [
+    linea(20, [[20, 'Actividad + MC Miguel Cu. T']]),
+    linea(90, [[30, 'Hoy']]),
+    linea(130, [[160, 'Cozzi Prueba Juliana']]),
+    linea(150, [[30, '21:56'], [110, 'to']]),
+    linea(170, [[160, 'Transferencia recibida'], [700, 'O Aprobado'], [980, '+$2.500']]),
+    linea(210, [[30, '21:52'], [160, 'Facundo Inventado Muñoz']]),
+    linea(230, [[160, 'Transferencia recibida'], [700, 'O Aprobado'], [980, '+$1.000']]),
+    linea(270, [[30, '21:48'], [160, 'Facundo Inventado Muñoz , , ;']]),
+    linea(290, [[160, 'Transferencia enviada G Dinero disponible'], [700, 'O Aprobado'], [980, '- $5.000']]),
+  ];
+  const filas = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 8, 22)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.tipo, f.monto, f.leyenda]),
+    [
+      ['08/10/2026', '21:56', 'Cozzi Prueba Juliana', 'COBRO', 2500, ''],
+      ['08/10/2026', '21:52', 'Facundo Inventado Muñoz', 'COBRO', 1000, ''],
+      ['08/10/2026', '21:48', 'Facundo Inventado Muñoz', 'PAGO', 5000, ''],
+    ]
+  );
+});
