@@ -156,7 +156,9 @@ export function resumen(res) {
     porOrigen.push({ lado, origen, cuenta, ...totales(list) });
   }
   porOrigen.sort((a, b) => a.lado.localeCompare(b.lado) || a.origen.localeCompare(b.origen) || a.cuenta.localeCompare(b.cuenta));
-  const nConciliados = res.matches.reduce((s, m) => s + m.panel.length, 0);
+  // Las cargas y retiros que se anulan entre sí en el panel también cuentan como resueltos.
+  const nAnulados = res.pendientes.filter((p) => p.estado === ESTADOS.ANULADO_PANEL).length;
+  const nConciliados = res.matches.reduce((s, m) => s + m.panel.length, 0) + nAnulados;
   const nPanelOperables = panel.filter((r) => r.tipo === 'COBRO' || r.tipo === 'PAGO').length;
   return {
     panel: tp,

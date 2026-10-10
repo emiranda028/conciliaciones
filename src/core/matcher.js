@@ -16,6 +16,7 @@ export const DEFAULT_PARAMS = {
   toleranciaMonto: 0.5, // diferencia máxima en $ para considerar montos iguales
   agrupar: true, // buscar 2 movimientos que sumen el monto del otro lado
   duplicadoMaxMin: 60, // ventana para marcar pagos duplicados
+  anulacionMaxMin: 30, // carga y retiro del mismo jugador y monto en el panel que se anulan entre sí
 };
 
 export const ESTADOS = {
@@ -33,6 +34,7 @@ export const ESTADOS = {
   INTERNO: 'Movimiento interno',
   COMISION: 'Comisión',
   REVERTIDO: 'Operación revertida',
+  ANULADO_PANEL: 'Anulado en el panel',
 };
 
 const MATCHABLE = new Set(['COBRO', 'PAGO']);
@@ -272,8 +274,13 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
 
   // 4) Lo que quedó suelto se clasifica.
   const pendientes = [];
+  const anulados = anuladosEnPanel(panel.filter((r) => !usados.has(r.id) && !estadosManuales[r.id]), params);
   for (const r of panel) {
     if (usados.has(r.id) && !estadosManuales[r.id]) continue;
+    if (anulados.has(r.id)) {
+      pendientes.push({ registro: r, estado: ESTADOS.ANULADO_PANEL, nota: anulados.get(r.id), automatico: true });
+      continue;
+    }
     pendientes.push(clasificarSuelto(r, estadosManuales[r.id]));
   }
   const pagosConciliados = matches.flatMap((m) => m.billetera).filter((w) => w.tipo === 'PAGO');
@@ -479,6 +486,35 @@ function findPair(cands, total, params, ok) {
     }
   }
   return null;
+}
+
+// Carga y retiro de fichas del mismo jugador, por el mismo monto y al rato, sin dinero de por
+// medio: una carga por error que se anuló (o al revés). Se informan juntas y no quedan pendientes.
+function anuladosEnPanel(sueltos, params) {
+  const win = (params.anulacionMaxMin ?? 30) * MIN;
+  const out = new Map();
+  const ops = sueltos.filter((r) => MATCHABLE.has(r.tipo) && r.persona).sort((a, b) => a.ts - b.ts);
+  for (const a of ops) {
+    if (out.has(a.id)) continue;
+    const b = ops.find(
+      (o) =>
+        !out.has(o.id) &&
+        o.id !== a.id &&
+        o.tipo !== a.tipo &&
+        o.ts >= a.ts &&
+        o.ts - a.ts <= win &&
+        Math.abs(o.monto - a.monto) <= params.toleranciaMonto &&
+        norm(o.persona) === norm(a.persona) &&
+        norm(o.cuenta) === norm(a.cuenta)
+    );
+    if (!b) continue;
+    const seg = Math.round((b.ts - a.ts) / 1000);
+    const lapso = seg < 120 ? `${seg} s` : `${Math.round(seg / 60)} min`;
+    const nota = `${a.tipo === 'COBRO' ? 'Carga' : 'Retiro'} y ${b.tipo === 'COBRO' ? 'carga' : 'retiro'} del mismo monto ${lapso} después`;
+    out.set(a.id, nota);
+    out.set(b.id, nota);
+  }
+  return out;
 }
 
 function esDuplicado(r, pagosConciliados, sueltos, params) {

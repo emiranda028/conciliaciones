@@ -28,6 +28,9 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
    - **Compensado:** carga y retiro del mismo jugador que en la billetera aparecen como un solo movimiento por la diferencia.
    - **Agrupado:** dos transferencias que corresponden a una sola carga de fichas, o al revés.
    - **Pago duplicado:** mismo titular y mismo monto pagados dos veces.
+   - **Anulado en el panel:** carga y retiro de fichas del mismo jugador y por el mismo monto, al rato
+     (por defecto, hasta 30 minutos) y sin dinero de por medio. Se informan juntos y no quedan como
+     pendientes.
    - **Usuarios y titulares:** la app aprende qué titular de billetera corresponde a cada usuario del panel (por ejemplo, `lucas0576` → "Lucas Julian Quintana") y usa lo aprendido para desempatar los días siguientes. También detecta parecidos entre nombres (`santi7342c` ~ "Santiago…").
    - Cada partida conciliada tiene una **confianza**. "Revisar" indica que el titular no coincide con el que se conocía para ese usuario.
 

@@ -420,3 +420,17 @@ test('BETS sin fila de títulos y con cada renglón entre comillas', async () =>
     ['PAGO', 5000, 'jugador1', 'AgentePrueba'],
   ]);
 });
+
+test('carga y retiro del mismo jugador que se anulan en el panel', () => {
+  const P = (id, h, tipo, monto, persona = 'cristiaan3221c') => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Agentead1', persona, ts: parseDateTime(`05/10/2026, ${h}`), tipo, monto });
+  const r = conciliar(
+    [P('a', '12:24:57', 'COBRO', 4500), P('b', '12:25:16', 'PAGO', 4500), P('c', '13:00:00', 'COBRO', 4500, 'otro1'), P('d', '15:00:00', 'PAGO', 4500, 'otro1')],
+    []
+  );
+  const est = Object.fromEntries(r.pendientes.map((p) => [p.registro.id, [p.estado, p.nota]]));
+  assert.deepEqual(est.a, [ESTADOS.ANULADO_PANEL, 'Carga y retiro del mismo monto 19 s después']);
+  assert.deepEqual(est.b, est.a);
+  // Dos horas después ya no se toma como anulación.
+  assert.equal(est.c[0], ESTADOS.FICHA_SIN_COBRO);
+  assert.equal(est.d[0], ESTADOS.RETIRO_SIN_PAGO);
+});

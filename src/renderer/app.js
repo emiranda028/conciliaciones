@@ -87,7 +87,7 @@ const ESTADOS_MANUALES = [
   'Otro',
 ];
 
-const INFORMATIVOS = new Set([ESTADOS.BONO, ESTADOS.INTERNO, ESTADOS.COMISION, ESTADOS.REVERTIDO]);
+const INFORMATIVOS = new Set([ESTADOS.BONO, ESTADOS.INTERNO, ESTADOS.COMISION, ESTADOS.REVERTIDO, ESTADOS.ANULADO_PANEL]);
 
 // ---------------------------------------------------------------------------
 // Utilidades de UI
@@ -910,7 +910,7 @@ function viewPendientes() {
     <div class="filters">
       <input type="search" id="pend-q" placeholder="Buscar usuario, titular, monto…" value="${esc(f.q)}" />
       <select id="pend-tipo"><option value="">Cobros y pagos</option><option value="COBRO" ${f.tipo === 'COBRO' ? 'selected' : ''}>Cobros</option><option value="PAGO" ${f.tipo === 'PAGO' ? 'selected' : ''}>Pagos</option></select>
-      <label class="row small"><input type="checkbox" id="pend-info" ${f.info ? 'checked' : ''} /> Mostrar bonos, internos, comisiones y revertidos</label>
+      <label class="row small"><input type="checkbox" id="pend-info" ${f.info ? 'checked' : ''} /> Mostrar bonos, internos, comisiones, revertidos y anulados en el panel</label>
       <span class="muted small">Elegí movimientos de ambos lados para conciliarlos a mano, o marcá su estado. Al elegir uno solo se resaltan en verde los del otro lado con el mismo monto.</span>
     </div>
     <div class="grid2">
@@ -1060,6 +1060,7 @@ function viewConfig() {
       ${num('toleranciaRelojMin', 'Tolerancia de orden invertido (min)', 'Diferencia de relojes entre panel y billetera.')}
       ${num('toleranciaMonto', 'Tolerancia de monto ($)', 'Diferencia máxima para considerar dos montos iguales.', 0.01)}
       ${num('duplicadoMaxMin', 'Ventana de pagos duplicados (min)', 'Mismo titular y monto dentro de este lapso.')}
+      ${num('anulacionMaxMin', 'Carga y retiro que se anulan (min)', 'Mismo jugador y monto en el panel, sin dinero de por medio: no quedan pendientes.')}
       <label class="field"><span>Bonificaciones (%)</span><input data-param="bonificaciones" value="${esc(p.bonificaciones.join(', '))}" /><em class="small">Porcentajes extra de fichas, separados por coma. Ej.: 10, 20</em></label>
       <label class="field"><span>Agrupar y compensar</span><select data-param="agrupar"><option value="1" ${p.agrupar ? 'selected' : ''}>Sí</option><option value="0" ${p.agrupar ? '' : 'selected'}>No</option></select>
         <em class="small">Buscar dos movimientos que sumen uno del otro lado, y cargas y retiros del mismo jugador que se netean.</em></label>
