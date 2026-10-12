@@ -434,3 +434,25 @@ test('carga y retiro del mismo jugador que se anulan en el panel', () => {
   assert.equal(est.c[0], ESTADOS.FICHA_SIN_COBRO);
   assert.equal(est.d[0], ESTADOS.RETIRO_SIN_PAGO);
 });
+
+test('el CUIT/CUIL del titular identifica al usuario aunque el nombre sea un apodo', async () => {
+  const { aprender } = await import('../src/core/matcher.js');
+  const { docDe } = await import('../src/core/importers.js');
+  assert.equal(docDe('27-32303596-8'), '32303596');
+  assert.equal(docDe('32303596'), '32303596');
+  assert.equal(docDe('CUIT'), '');
+  const P = (id, h, monto) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Ag', persona: 'brenda2024', ts: parseDateTime(`06/10/2026, ${h}`), tipo: 'COBRO', monto });
+  const Wm = (id, h, monto, persona, doc) => ({ id, lado: 'billetera', origen: 'MERCADO PAGO', cuenta: '', persona, doc, ts: parseDateTime(`06/10/2026, ${h}`), tipo: 'COBRO', monto });
+  // Día 1: se cruza por hora con Cash y se aprende el documento.
+  const d1 = conciliar([P('p1', '10:01:00', 3000)], [Wm('w1', '10:00:00', 3000, 'Brenda Ejemplo Ruiz', '32303596')]);
+  const dicc = aprender({}, d1.matches);
+  assert.ok(dicc.brenda2024.nombres['#32303596']);
+  // Día 2: Mercado Pago con apodo y el mismo documento: se reconoce aunque otro pago del mismo monto esté más cerca.
+  const r = conciliar(
+    [P('p2', '15:05:00', 2000)],
+    [Wm('w2', '15:04:30', 2000, 'Fumigador', '99999999'), Wm('w3', '15:02:00', 2000, 'Bhb', '32303596')],
+    { diccionario: dicc }
+  );
+  assert.equal(r.matches[0].billetera[0].id, 'w3');
+  assert.equal(r.matches[0].confianza, 'alta');
+});

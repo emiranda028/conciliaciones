@@ -65,6 +65,15 @@ function findHeaderFrom(rows, anchor, keys, maxScan = 20) {
 
 const get = (row, idx) => (idx == null || idx < 0 ? null : row[idx]);
 
+// Documento de la persona (CUIT/CUIL o DNI) reducido al DNI: identifica al titular aunque el
+// nombre venga escrito distinto o sea un apodo ("Bhb", "Los pitufos").
+export function docDe(v) {
+  const d = String(v ?? '').replace(/\D/g, '');
+  if (d.length === 11) return d.slice(2, 10).replace(/^0+/, '');
+  if (d.length >= 7 && d.length <= 8) return d.replace(/^0+/, '');
+  return '';
+}
+
 function mk(base) {
   return {
     cuenta: '',
@@ -334,6 +343,8 @@ const cashKeys = {
   '?concepto': 'concepto',
   '?remitente': 'nombreremitente',
   '?destinatario': 'nombredestinatario',
+  '?cuitRemitente': 'cuitremitente',
+  '?cuitDestinatario': 'cuitdestinatario',
 };
 
 const cash = {
@@ -370,6 +381,7 @@ const cash = {
           origen: 'CASH',
           cuenta: cleanText(get(row, c.cuenta)),
           persona: cleanText(get(row, entrante ? c.remitente : c.destinatario)),
+          doc: docDe(get(row, entrante ? c.cuitRemitente : c.cuitDestinatario)),
           ts,
           tipo,
           monto,
@@ -391,6 +403,7 @@ const mpKeys = {
   '?origen': 'fechadeorigen',
   '?cuenta': 'codigodelacuentadelvendedor',
   '?pagador': 'pagador',
+  '?docPagador': 'numerodeidentificaciondelpagador',
 };
 
 const mercadoPago = {
@@ -419,6 +432,7 @@ const mercadoPago = {
           origen: 'MERCADO PAGO',
           cuenta: cleanText(get(row, c.cuenta)),
           persona: cleanText(get(row, c.pagador)),
+          doc: docDe(get(row, c.docPagador)),
           ts,
           tipo: valor > 0 ? 'COBRO' : 'PAGO',
           monto: valor,

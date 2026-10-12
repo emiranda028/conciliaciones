@@ -297,7 +297,9 @@ function viewCargar() {
         <td><div>${esc(f.nombre)}</div>${f.hoja ? `<div class="muted small">Hoja: ${esc(f.hoja)}</div>` : ''}${f.error ? `<div class="neg small">${esc(f.error)}</div>` : ''}</td>
         <td><select data-fuente-tipo="${f.id}">${opts(f)}</select></td>
         <td>${f.lado ? `<span class="badge ${f.lado === 'panel' ? 'info' : 'ok'}">${f.lado === 'panel' ? 'Panel (fichas)' : 'Billetera (dinero)'}</span>` : ''}</td>
-        <td>${cant}${f.skipped ? `<div class="muted small">${f.skipped} filas ignoradas</div>` : ''}</td>
+        <td>${cant}${f.skipped ? `<div class="muted small">${f.skipped} filas ignoradas</div>` : ''}${
+          !f.activa && f.importerKey && f.records.length ? '<div class="neg small"><b>No se está usando:</b> tildá la casilla de la izquierda para conciliarlo.</div>' : ''
+        }</td>
         <td class="nowrap small">${f.desde ? `${esc(fmtDateTime(f.desde))}<br>${esc(fmtDateTime(f.hasta))}` : ''}</td>
         <td class="nowrap"><button class="btn sm" data-fuente-ver="${f.id}">Ver</button> <button class="btn sm danger" data-fuente-quitar="${f.id}">Quitar</button></td>
       </tr>`;

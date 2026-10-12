@@ -92,11 +92,17 @@ function lev(a, b) {
 
 // Relación de nombre entre un movimiento de panel y uno de billetera.
 // 'conocido' (diccionario coincide), 'distinto' (diccionario dice otro), 'pista', o null.
+// Clave del documento en el diccionario ("#32303596"): se guarda junto a los nombres del usuario.
+export const claveDoc = (doc) => (doc ? `#${doc}` : '');
+
 function nameRelation(dicc, p, w) {
+  const all = mappedNames(dicc, p.persona) || {};
+  // El documento (CUIT/CUIL) ya visto con este usuario es la mejor señal, aunque el nombre sea un apodo.
+  if (w.doc && all[claveDoc(w.doc)]) return 'conocido';
   if (!w.persona) return null;
-  const known = mappedNames(dicc, p.persona);
+  const known = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith('#')));
   const wk = nameKey(w.persona);
-  if (known && Object.keys(known).length) {
+  if (Object.keys(known).length) {
     if (known[wk] || Object.keys(known).some((k) => mismoNombre(k, wk))) return 'conocido';
     if (nameHint(p.persona, w.persona)) return 'pista';
     // Un usuario que ya pagó desde dos o más cuentas distintas puede usar otra más:
@@ -348,12 +354,16 @@ export function aprender(dicc, matches) {
     if (!(m.confianza === 'alta' || m.confianza === 'manual')) continue;
     const p = m.panel[0];
     const w = m.billetera[0];
-    if (!p.persona || !w.persona) continue;
+    if (!p.persona || !(w.persona || w.doc)) continue;
     const k = norm(p.persona);
     const e = out[k] || (out[k] = { usuario: p.persona, nombres: {} });
-    const wk = nameKey(w.persona);
-    if (!e.nombres[wk]) e.nombres[wk] = { nombre: w.persona, veces: 0 };
-    e.nombres[wk].veces += 1;
+    const sumar = (key, nombre) => {
+      if (!key) return;
+      if (!e.nombres[key]) e.nombres[key] = { nombre, veces: 0 };
+      e.nombres[key].veces += 1;
+    };
+    if (w.persona) sumar(nameKey(w.persona), w.persona);
+    if (w.doc) sumar(claveDoc(w.doc), `DNI/CUIT ${w.doc}${w.persona ? ` (${w.persona})` : ''}`);
   }
   return out;
 }

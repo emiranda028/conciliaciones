@@ -32,6 +32,9 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
      (por defecto, hasta 30 minutos) y sin dinero de por medio. Se informan juntos y no quedan como
      pendientes.
    - **Usuarios y titulares:** la app aprende qué titular de billetera corresponde a cada usuario del panel (por ejemplo, `lucas0576` → "Lucas Julian Quintana") y usa lo aprendido para desempatar los días siguientes. También detecta parecidos entre nombres (`santi7342c` ~ "Santiago…").
+   - **Documento del titular:** cuando el reporte trae CUIT/CUIL (Cash, Mercado Pago), la app también
+     aprende qué documento usa cada usuario. Así reconoce al jugador aunque en Mercado Pago figure con
+     un apodo ("Bhb", "Los pitufos") o con otro nombre.
    - Cada partida conciliada tiene una **confianza**. "Revisar" indica que el titular no coincide con el que se conocía para ese usuario.
 
 3. **Pendientes:** se eligen movimientos de los dos lados y se concilian a mano con una nota, o se marca su estado (ingreso sin identificar, pago duplicado, error de carga, etc.). Cualquier partida automática se puede deshacer.
