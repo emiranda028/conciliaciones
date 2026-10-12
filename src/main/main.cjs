@@ -129,7 +129,25 @@ ipcMain.handle('ocr:leer', async (_e, data) => {
   // Comprobantes (un movimiento por imagen, letra grande): una segunda lectura con
   // segmentación automática encuentra el monto que la lectura por bloque a veces saltea.
   const texto = lines.map((l) => l.text).join('\n');
-  if (!/comprobante|origen y destino|de operaci/i.test(texto)) return lines;
+  if (!/comprobante|origen y destino|de operaci/i.test(texto)) {
+    // Capturas anchas de la compu (columnas separadas): una segunda lectura por palabras sueltas,
+    // con su posición, para armar cada movimiento alrededor del monto.
+    let ancha = false;
+    try {
+      const { width, height } = nativeImage.createFromBuffer(Buffer.from(data)).getSize();
+      ancha = width > height * 1.25;
+    } catch {
+      /* sin tamaño: se queda con la primera lectura */
+    }
+    if (!ancha) return lines;
+    try {
+      await w.setParameters({ tessedit_pageseg_mode: '11' });
+      const { data: d3 } = await w.recognize(img, {}, { blocks: true });
+      return { lines, palabras: lineasOcr(d3) };
+    } finally {
+      await w.setParameters({ tessedit_pageseg_mode: '6' });
+    }
+  }
   try {
     await w.setParameters({ tessedit_pageseg_mode: '3' });
     const { data: d2 } = await w.recognize(img, {}, { blocks: true });

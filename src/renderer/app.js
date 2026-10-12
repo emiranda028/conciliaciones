@@ -19,7 +19,7 @@ import {
   agentesDePaneles,
   DEFAULT_LINEAS,
 } from '../core/session.js';
-import { parsearCaptura, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
+import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { imagenesDePdf } from '../core/pdf.js';
 import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto } from '../core/report.js';
@@ -465,6 +465,9 @@ async function cargarArchivos(files) {
 // Capturas de pantalla: OCR local, revisión y alta como fuente
 
 // Lee con OCR las imágenes y agrega sus movimientos al lote (cap). Devuelve las filas nuevas.
+// Qué tan completa es una lectura: titular, hora y sin dudas.
+const puntajeFilas = (filas) => filas.reduce((s, f) => s + (f.nombre ? 2 : 0) + (f.hora ? 1 : 0) - (f.dudoso ? 1 : 0), 0);
+
 async function ocrArchivos(files, cap, progreso) {
   files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
   files = await expandirPdfs(files, cap.errores);
@@ -486,6 +489,12 @@ async function ocrArchivos(files, cap, progreso) {
         const pdf = files[i].pdf;
         const fechaDefecto = fechaDeNombre(pdf?.titulo || '', hoy) || fechaDeNombre(pdf?.archivo || files[i].name, hoy);
         filas = parsearCaptura(lines, { imagen: files[i].name, hoy, fechaDefecto });
+        // Captura ancha (Mercado Pago en la compu): se prueba también la lectura por palabras y
+        // se queda con la que dé más movimientos completos.
+        if (!Array.isArray(res) && res.palabras?.length) {
+          const otra = parsearCaptura(lineasPorMonto(res.palabras), { imagen: files[i].name, hoy, fechaDefecto });
+          if (puntajeFilas(otra) > puntajeFilas(filas)) filas = otra;
+        }
       }
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
       // Las capturas sin hora toman el turno del nombre del archivo (TM, TT, TN…) o el elegido para el lote.

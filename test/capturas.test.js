@@ -500,3 +500,31 @@ test('Mercado Pago en la compu (Actividad): titular arriba con la hora, leyenda 
     ]
   );
 });
+
+test('captura ancha de la compu leída por palabras: se arma cada movimiento alrededor del monto', async () => {
+  const { lineasPorMonto } = await import('../src/core/capturas.js');
+  const W = (text, x0, y0, x1, y1, confidence = 95) => ({ text, bbox: { x0, y0, x1, y1 }, confidence });
+  const fila = (y, nombre, hora, extra, monto, leyenda) => [
+    ...nombre.split(' ').map((t, i) => W(t, 329 + i * 110, y, 420 + i * 110, y + 23)),
+    W(hora, 74, y + 24, 141, y + 44),
+    W('O', 1470, y + 18, 1503, y + 50),
+    W('Aprobado', 1511, y + 24, 1643, y + 50),
+    ...(extra ? [W('7', 1034, y + 24, 1066, y + 46, 59), W('Dinero', 1076, y + 24, 1160, y + 45), W('disponible', 1170, y + 24, 1304, y + 51)] : []),
+    ...monto.map(([t, x0, x1]) => W(t, x0, y + 22, x1, y + 47)),
+    ...leyenda.split(' ').map((t, i) => W(t, 329 + i * 190, y + 44, 508 + i * 190, y + 67)),
+    W('ta', 243, y + 14, 284, y + 46, 40),
+  ];
+  const lines = [
+    { words: [W('Actividad', 49, 28, 211, 57), W('Hoy', 65, 179, 118, 206)] },
+    { words: fila(264, 'Cozzi Prueba Juliana', '21:56', false, [['+$2.500', 1967, 2089]], 'Transferencia recibida') },
+    { words: fila(408, 'Facundo Inventado Muñoz', '21:48', true, [['-', 1972, 1982], ['$5.000', 1989, 2089]], 'Transferencia enviada') },
+  ];
+  const filas = parsearCaptura(lineasPorMonto(lines), { hoy: new Date(Date.UTC(2026, 9, 8, 22)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.tipo, f.monto, f.leyenda]),
+    [
+      ['08/10/2026', '21:56', 'Cozzi Prueba Juliana', 'COBRO', 2500, ''],
+      ['08/10/2026', '21:48', 'Facundo Inventado Muñoz', 'PAGO', 5000, ''],
+    ]
+  );
+});

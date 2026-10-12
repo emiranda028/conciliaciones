@@ -407,12 +407,22 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       imagen,
     });
   }
+  // Filas sin día en una captura que sí lo tiene en otras filas (por ejemplo, la hora no se pudo
+  // leer): toman el de la fila de arriba y quedan para revisar.
+  filas.forEach((f, k) => {
+    if (f.fecha) return;
+    const vecina = filas.slice(0, k).reverse().find((x) => x.fecha) || filas.slice(k + 1).find((x) => x.fecha);
+    if (vecina) Object.assign(f, { fecha: vecina.fecha, dudoso: true });
+  });
   return filas;
 }
 
 export function claveFila(f) {
   // Con número de operación (comprobantes) solo se une la misma operación.
   if (f.ref) return `ref|${f.ref}`;
+  // Con hora alcanza con día, hora, tipo y monto: el nombre puede venir mal leído en una de las dos
+  // capturas (por ejemplo, cortado arriba de la pantalla).
+  if (f.hora) return `${f.fecha}|${f.hora}|${f.tipo}|${f.monto}`;
   return `${f.fecha}|${f.tipo}|${f.monto}|${nameTokens(f.nombre).join(' ')}`;
 }
 
@@ -598,4 +608,69 @@ export const CAPTURA_HEADER = ['Fecha', 'Titular', 'Operación', 'Monto', 'Cuent
 // Tabla que se guarda como fuente (así se puede guardar en el trabajo y volver a leer).
 export function filasATabla(filas, cuenta) {
   return [CAPTURA_HEADER, ...filas.map((f) => [f.fecha, f.nombre + (f.truncado ? '...' : ''), f.tipo === 'COBRO' ? 'Cobro' : 'Pago', f.monto, f.cuenta || cuenta, f.imagen || '', leyendaVisible(f.leyenda), f.hora || '', f.hora ? '' : f.turno || '', f.ref || ''])];
+}
+
+// ---------------------------------------------------------------------------
+// Capturas anchas de la compu (Mercado Pago "Actividad"): el titular, la hora, el estado y el
+// monto quedan en columnas separadas y a alturas distintas, y la lectura por renglones las mezcla.
+// Con las palabras sueltas del OCR (cada una con su posición) se arma cada movimiento alrededor
+// de su monto: el texto de arriba es el titular, el de abajo la leyenda, y la hora la que esté
+// a la misma altura. Devuelve renglones en el formato A ("Titular $monto" / "Leyenda hora").
+const PALABRA_PLATA = /^[+\-−–]?\$[\d.,]+$/;
+export function lineasPorMonto(lines) {
+  const words = lines
+    .flatMap((l) => (l.words || []).map((w) => ({ text: String(w.text || '').trim(), bbox: w.bbox, conf: w.confidence ?? l.confidence })))
+    .filter((w) => w.text && w.bbox);
+  const cy = (w) => (w.bbox.y0 + w.bbox.y1) / 2;
+  // Montos: "+$2.500" en una palabra, o "-" / "$" sueltos delante del número.
+  const montos = [];
+  for (let i = 0; i < words.length; i += 1) {
+    const w = words[i];
+    if (PALABRA_PLATA.test(w.text) && /\d/.test(w.text)) montos.push({ w, texto: w.text });
+    else if (/^[+\-−–]$/.test(w.text) && words[i + 1] && PALABRA_PLATA.test(words[i + 1].text) && Math.abs(cy(words[i + 1]) - cy(w)) < 20) {
+      montos.push({ w: words[i + 1], texto: `${w.text}${words[i + 1].text}` });
+      i += 1;
+    }
+  }
+  if (montos.length < 2) return [];
+  montos.sort((a, b) => cy(a.w) - cy(b.w));
+  const xMonto = Math.min(...montos.map((m) => m.w.bbox.x0));
+  const usados = new Set(montos.map((m) => m.w));
+  // Altura típica de una palabra: los íconos y avatares (mucho más altos) se descartan.
+  const alturas = words.map((w) => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
+  const altoTipico = alturas[Math.floor(alturas.length / 2)] || 20;
+  const renglonesDe = (ws) => {
+    const rs = [];
+    for (const w of [...ws].filter((x) => x.bbox.y1 - x.bbox.y0 <= 1.6 * altoTipico).sort((a, b) => cy(a) - cy(b))) {
+      const r = rs.find((x) => Math.abs(x.cy - cy(w)) < 0.5 * altoTipico);
+      if (r) r.ws.push(w);
+      else rs.push({ cy: cy(w), ws: [w] });
+    }
+    return rs
+      .sort((a, b) => a.cy - b.cy)
+      .map((r) => ({ y0: Math.min(...r.ws.map((w) => w.bbox.y0)), y1: Math.max(...r.ws.map((w) => w.bbox.y1)), ws: r.ws, text: r.ws.sort((a, b) => a.bbox.x0 - b.bbox.x0).map((w) => w.text).join(' ') }));
+  };
+  const out = [];
+  // Encabezados arriba del primer movimiento ("Hoy", "Ayer", "5 de octubre").
+  const alto = montos[0].w.bbox.y1 - montos[0].w.bbox.y0;
+  const inicio = cy(montos[0].w) - 3 * alto;
+  for (const r of renglonesDe(words.filter((w) => cy(w) < inicio))) out.push({ text: r.text, confidence: 90 });
+  montos.forEach((m, k) => {
+    const y = cy(m.w);
+    const desde = k ? (cy(montos[k - 1].w) + y) / 2 : inicio;
+    const hasta = k < montos.length - 1 ? (cy(montos[k + 1].w) + y) / 2 : y + 3 * alto;
+    const zona = words.filter((w) => !usados.has(w) && cy(w) >= desde && cy(w) < hasta && w.bbox.x1 <= xMonto);
+    const hora = zona.find((w) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(w.text));
+    const texto = renglonesDe(zona.filter((w) => w !== hora).map((w) => ({ ...w, text: sinEstado(w.text) })).filter((w) => w.text));
+    // Lo que está a la altura del monto (ícono, "Dinero disponible", "Aprobado") no es ni titular ni leyenda.
+    const centro = (r) => (r.y0 + r.y1) / 2;
+    const arriba = texto.filter((r) => centro(r) < y - 0.5 * altoTipico && /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(r.text));
+    const abajo = texto.filter((r) => centro(r) > y + 0.5 * altoTipico);
+    const titular = sinEstado(arriba.length ? arriba[arriba.length - 1].text : '');
+    const leyenda = sinEstado(abajo.map((r) => r.text).join(' '));
+    const conf = Math.min(...[...(arriba.at(-1)?.ws || []), m.w].map((w) => w.conf ?? 90));
+    out.push({ text: `${titular} ${m.texto}`, confidence: conf });
+    out.push({ text: `${leyenda} ${hora ? hora.text : ''}`.trim(), confidence: 90 });
+  });
+  return out;
 }
