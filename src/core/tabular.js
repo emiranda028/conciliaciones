@@ -1,6 +1,7 @@
 // Lectura de archivos a "tablas" (matriz de celdas). Una tabla por hoja de Excel,
 // una por CSV y una por texto pegado.
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { cleanText } from './util.js';
 
 function detectDelimiter(line) {
@@ -82,9 +83,30 @@ function cellValue(v) {
   return v;
 }
 
+// Algunos sistemas generan el Excel con prefijo en cada etiqueta ("<x:row>") y con BOM al
+// principio; Excel lo abre, pero la librería no. Se reescribe el archivo sin prefijos.
+async function normalizarXlsx(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  for (const f of Object.values(zip.files)) {
+    if (f.dir || !/\.(xml|rels)$/i.test(f.name)) continue;
+    let t = (await f.async('string')).replace(/^\ufeff/, '');
+    const m = t.match(/<(\w+):\w+[\s>/]/);
+    if (m && new RegExp(`xmlns:${m[1]}=`).test(t)) {
+      t = t.replace(new RegExp(`<(/?)${m[1]}:`, 'g'), '<$1').replace(`xmlns:${m[1]}=`, 'xmlns=');
+    }
+    zip.file(f.name, t);
+  }
+  return zip.generateAsync({ type: 'uint8array' });
+}
+
 export async function readXlsx(buf) {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
+  let wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(buf);
+  } catch {
+    wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await normalizarXlsx(buf));
+  }
   const tables = [];
   wb.eachSheet((ws) => {
     const rows = [];

@@ -456,3 +456,27 @@ test('el CUIT/CUIL del titular identifica al usuario aunque el nombre sea un apo
   assert.equal(r.matches[0].billetera[0].id, 'w3');
   assert.equal(r.matches[0].confianza, 'alta');
 });
+
+test('reporte de flujo por sucursal (hoja Detalle) y CBU/CVU como identidad', async () => {
+  const { detect } = await import('../src/core/importers.js');
+  const { aprender } = await import('../src/core/matcher.js');
+  const rows = [
+    ['Sucursal', 'Caja', 'Cuenta', 'Fecha', 'Tipo', 'Importe', 'Descripción', 'Destino', 'CUIT'],
+    ['SUC DEMO', 'Caja Central', 'abc123', new Date(Date.UTC(2026, 9, 29, 21, 10, 5)), 'Ingreso', 18000, 'TRANSFER', '0000003100049443479288', ''],
+    ['SUC DEMO', 'Caja Central', 'abc123', new Date(Date.UTC(2026, 9, 29, 22, 0, 0)), 'Egreso', 60000, 'TRANSFER', '0000003100045355349266', ''],
+  ];
+  const imp = detect(rows);
+  assert.equal(imp?.key, 'SUCURSALES');
+  const { records } = imp.parse(rows);
+  assert.deepEqual(records.map((r) => [fmtDateTime(r.ts), r.tipo, r.monto, r.cuenta, r.cbu]), [
+    ['29/10/2026 21:10:05', 'COBRO', 18000, 'SUC DEMO · Caja Central', '0000003100049443479288'],
+    ['29/10/2026 22:00:00', 'PAGO', 60000, 'SUC DEMO · Caja Central', '0000003100045355349266'],
+  ]);
+  // El CBU aprendido en otro día (por ejemplo, con Cash) identifica al jugador sin nombre.
+  const P = (id, h, monto) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Ag', persona: 'claudio77', ts: parseDateTime(h), tipo: 'COBRO', monto });
+  const W = (id, h, monto, cbu, persona = '') => ({ id, lado: 'billetera', origen: 'X', cuenta: '', persona, cbu, ts: parseDateTime(h), tipo: 'COBRO', monto });
+  const dicc = aprender({}, conciliar([P('p0', '28/10/2026, 10:01:00', 5000)], [W('w0', '28/10/2026, 10:00:00', 5000, '0000003100049443479288', 'Claudio Prueba Caceres')]).matches);
+  const r = conciliar([P('p1', '29/10/2026, 21:12:00', 18000)], [W('w2', '29/10/2026, 21:11:30', 18000, '9999999999999999999999'), records[0]], { diccionario: dicc });
+  assert.equal(r.matches[0].billetera[0].cbu, '0000003100049443479288');
+  assert.equal(r.matches[0].confianza, 'alta');
+});

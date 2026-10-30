@@ -17,6 +17,7 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
    | Cash: reporte con ID Interno / Dirección / COELSA | Billetera | Los "Fee" van como comisión, los "Interno" como movimiento interno y las "Revertida" se informan aparte. |
    | Mercado Pago: reporte de operaciones | Billetera | Se usa la fecha de aprobación (pasada a hora argentina). PAYOUTS cuenta como pago. |
    | Mercado Pago: reporte de retiros | Billetera | Completa el titular de los PAYOUTS. |
+   | Reporte de flujo por sucursal (hoja "Detalle": Sucursal, Caja, Fecha, Tipo, Importe, Destino, CUIT) | Billetera | No trae nombres: el jugador se reconoce por el CBU/CVU (o CUIT) que la app aprendió de otros reportes, y si no, por hora y monto. |
    | GANEMOS en tabla (hoja "Consolidado": ID / FECHA / OPERACIÓN / INICIADOR / DE / A) | Panel | Si también se carga la hoja original, los repetidos se descartan. |
    | **Capturas de pantalla** (.png/.jpg) de "Mis movimientos" de una billetera | Billetera | Se leen con OCR en la propia computadora. Ver más abajo. |
    | Cualquier otro Excel o CSV | Cualquiera | Se mapean las columnas una vez y el formato queda guardado. |

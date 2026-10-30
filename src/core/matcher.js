@@ -94,11 +94,13 @@ function lev(a, b) {
 // 'conocido' (diccionario coincide), 'distinto' (diccionario dice otro), 'pista', o null.
 // Clave del documento en el diccionario ("#32303596"): se guarda junto a los nombres del usuario.
 export const claveDoc = (doc) => (doc ? `#${doc}` : '');
+// Claves de identidad de un movimiento de billetera: documento y CBU/CVU.
+const clavesId = (w) => [w.doc ? claveDoc(w.doc) : '', w.cbu ? `#cbu${w.cbu}` : ''].filter(Boolean);
 
 function nameRelation(dicc, p, w) {
   const all = mappedNames(dicc, p.persona) || {};
   // El documento (CUIT/CUIL) ya visto con este usuario es la mejor señal, aunque el nombre sea un apodo.
-  if (w.doc && all[claveDoc(w.doc)]) return 'conocido';
+  if (clavesId(w).some((k) => all[k])) return 'conocido';
   if (!w.persona) return null;
   const known = Object.fromEntries(Object.entries(all).filter(([k]) => !k.startsWith('#')));
   const wk = nameKey(w.persona);
@@ -354,7 +356,7 @@ export function aprender(dicc, matches) {
     if (!(m.confianza === 'alta' || m.confianza === 'manual')) continue;
     const p = m.panel[0];
     const w = m.billetera[0];
-    if (!p.persona || !(w.persona || w.doc)) continue;
+    if (!p.persona || !(w.persona || w.doc || w.cbu)) continue;
     const k = norm(p.persona);
     const e = out[k] || (out[k] = { usuario: p.persona, nombres: {} });
     const sumar = (key, nombre) => {
@@ -364,6 +366,7 @@ export function aprender(dicc, matches) {
     };
     if (w.persona) sumar(nameKey(w.persona), w.persona);
     if (w.doc) sumar(claveDoc(w.doc), `DNI/CUIT ${w.doc}${w.persona ? ` (${w.persona})` : ''}`);
+    if (w.cbu) sumar(`#cbu${w.cbu}`, `CBU/CVU ${w.cbu}${w.persona ? ` (${w.persona})` : ''}`);
   }
   return out;
 }

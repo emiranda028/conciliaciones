@@ -67,6 +67,12 @@ const get = (row, idx) => (idx == null || idx < 0 ? null : row[idx]);
 
 // Documento de la persona (CUIT/CUIL o DNI) reducido al DNI: identifica al titular aunque el
 // nombre venga escrito distinto o sea un apodo ("Bhb", "Los pitufos").
+// CBU/CVU de la cuenta de la otra persona (22 dígitos).
+export function cbuDe(v) {
+  const d = String(v ?? '').replace(/\D/g, '');
+  return d.length === 22 ? d : '';
+}
+
 export function docDe(v) {
   const d = String(v ?? '').replace(/\D/g, '');
   if (d.length === 11) return d.slice(2, 10).replace(/^0+/, '');
@@ -345,6 +351,8 @@ const cashKeys = {
   '?destinatario': 'nombredestinatario',
   '?cuitRemitente': 'cuitremitente',
   '?cuitDestinatario': 'cuitdestinatario',
+  '?cbuRemitente': 'cburemitente',
+  '?cbuDestinatario': 'cbudestinatario',
 };
 
 const cash = {
@@ -382,6 +390,7 @@ const cash = {
           cuenta: cleanText(get(row, c.cuenta)),
           persona: cleanText(get(row, entrante ? c.remitente : c.destinatario)),
           doc: docDe(get(row, entrante ? c.cuitRemitente : c.cuitDestinatario)),
+          cbu: cbuDe(get(row, entrante ? c.cbuRemitente : c.cbuDestinatario)),
           ts,
           tipo,
           monto,
@@ -561,7 +570,62 @@ const capturas = {
   },
 };
 
-export const IMPORTERS = [bets, ganemos, ganemosTabla, zeus, cash, mercadoPago, mpRetiros, capturas, panelPlano];
+// ---------------------------------------------------------------------------
+// Reporte de flujo por sucursal (hoja "Detalle"): Sucursal | Caja | Cuenta | Fecha | Tipo
+// (Ingreso/Egreso) | Importe | Descripción | Destino (CBU/CVU de la otra cuenta) | CUIT.
+// No trae nombres: el titular se reconoce por el CBU/CVU o el CUIT que el sistema ya aprendió.
+const sucursalesKeys = {
+  sucursal: 'sucursal',
+  fecha: 'fecha',
+  tipo: 'tipo',
+  importe: 'importe',
+  '?caja': 'caja',
+  '?descripcion': 'descripcion',
+  '?destino': 'destino',
+  '?cuit': 'cuit',
+};
+
+const sucursales = {
+  key: 'SUCURSALES',
+  label: 'Billetera: reporte de flujo por sucursal',
+  lado: LADO.BILLETERA,
+  detect(rows) {
+    const h = findHeader(rows, sucursalesKeys);
+    return h && h.cols.destino >= 0 ? 100 : h ? 90 : 0;
+  },
+  parse(rows) {
+    const h = findHeader(rows, sucursalesKeys);
+    const c = h.cols;
+    const out = [];
+    let skipped = 0;
+    for (const row of rows.slice(h.row + 1)) {
+      const importe = parseNumber(get(row, c.importe));
+      const ts = parseDateTime(get(row, c.fecha));
+      const tipoTxt = norm(get(row, c.tipo));
+      if (importe == null || !importe || ts == null || !/^(ingreso|egreso)/.test(tipoTxt)) {
+        skipped += 1;
+        continue;
+      }
+      out.push(
+        mk({
+          lado: LADO.BILLETERA,
+          origen: 'SUCURSAL',
+          cuenta: [cleanText(get(row, c.sucursal)), cleanText(get(row, c.caja))].filter(Boolean).join(' · '),
+          persona: '',
+          doc: docDe(get(row, c.cuit)),
+          cbu: cbuDe(get(row, c.destino)),
+          ts,
+          tipo: tipoTxt.startsWith('ingreso') ? 'COBRO' : 'PAGO',
+          monto: importe,
+          detalle: cleanText(get(row, c.descripcion)),
+        })
+      );
+    }
+    return { records: out, skipped };
+  },
+};
+
+export const IMPORTERS = [bets, ganemos, ganemosTabla, zeus, cash, mercadoPago, mpRetiros, capturas, sucursales, panelPlano];
 
 export function importerByKey(key) {
   return IMPORTERS.find((i) => i.key === key) || null;

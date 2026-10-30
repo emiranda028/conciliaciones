@@ -20,7 +20,8 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "exceljs": "^4.4.0",
-    "javascript-obfuscator": "^5.8.0"
+    "javascript-obfuscator": "^5.8.0",
+    "jszip": "^3.10.1"
   },
   "build": {
     "appId": "ar.conciliador.fichas",
