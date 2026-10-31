@@ -323,6 +323,79 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
     ws.addRow([`${txt} (${g.cantidad || 0} partidas)`, fmtDuration(g.promedio), fmtDuration(g.mediana), fmtDuration(g.maximo)]);
   }
 
+  // Conciliados y pendientes juntos, en orden de fecha y hora: cada fila es una partida
+  // conciliada (panel y billetera en la misma fila) o un movimiento pendiente de un solo lado.
+  const todo = [
+    ...res.matches.map((m) => ({
+      ts: m.panel[0]?.ts ?? m.billetera[0]?.ts ?? m.ts,
+      fila: {
+        situacion: 'Conciliado',
+        estado: m.estado,
+        confianza: m.confianza,
+        tipo: m.tipo,
+        turno: turnoDe(m.panel[0]?.ts ?? m.ts, turnos),
+        pFechaHora: fechaExcel(m.panel[0]),
+        pFechaHoraSinHora: !!m.panel[0]?.sinHora,
+        pCuenta: joinF(m.panel, (r) => r.cuenta),
+        pPersona: joinF(m.panel, (r) => r.persona),
+        montoPanel: m.montoPanel,
+        wFechaHora: fechaExcel(m.billetera[0]),
+        wFechaHoraSinHora: !!m.billetera[0]?.sinHora,
+        wCuenta: joinF(m.billetera, (r) => r.cuenta),
+        wPersona: joinF(m.billetera, (r) => r.persona),
+        montoBilletera: m.montoBilletera,
+        diferencia: m.diferencia,
+        demora: fmtDuration(m.demora),
+        nota: m.nota,
+      },
+    })),
+    ...res.pendientes.map((p) => {
+      const r = p.registro;
+      const panelLado = r.lado === 'panel';
+      const monto = r.tipo === 'PAGO' ? -r.monto : r.monto;
+      return {
+        ts: r.ts,
+        fila: {
+          situacion: 'Pendiente',
+          estado: p.estado,
+          tipo: TIPO_TXT[r.tipo] || r.tipo,
+          turno: r.sinHora ? r.turno || '' : turnoDe(r.ts, turnos),
+          ...(panelLado
+            ? { pFechaHora: fechaExcel(r), pFechaHoraSinHora: !!r.sinHora, pCuenta: r.cuenta, pPersona: r.persona, montoPanel: monto }
+            : { wFechaHora: fechaExcel(r), wFechaHoraSinHora: !!r.sinHora, wCuenta: r.cuenta, wPersona: r.persona, montoBilletera: monto }),
+          nota: [p.nota, r.detalle].filter(Boolean).join(' · '),
+        },
+      };
+    }),
+  ].sort((a, b) => a.ts - b.ts);
+  const wsTodo = addSheet(
+    wb,
+    'Conciliados y pendientes',
+    [
+      { h: 'Situación', k: 'situacion', w: 12 },
+      { h: 'Estado', k: 'estado', w: 26 },
+      { h: 'Confianza', k: 'confianza', w: 10 },
+      { h: 'Operación', k: 'tipo', w: 10 },
+      { h: 'Turno', k: 'turno', w: 14 },
+      { h: 'Panel fecha y hora (AR)', k: 'pFechaHora', w: 19, fecha: true },
+      { h: 'Agente', k: 'pCuenta', w: 16 },
+      { h: 'Usuario', k: 'pPersona', w: 18 },
+      { h: 'Monto panel', k: 'montoPanel', w: 13, money: true },
+      { h: 'Billetera fecha y hora (AR)', k: 'wFechaHora', w: 19, fecha: true },
+      { h: 'Cuenta', k: 'wCuenta', w: 16 },
+      { h: 'Titular', k: 'wPersona', w: 28 },
+      { h: 'Monto billetera', k: 'montoBilletera', w: 13, money: true },
+      { h: 'Diferencia', k: 'diferencia', w: 12, money: true },
+      { h: 'Demora', k: 'demora', w: 12 },
+      { h: 'Nota', k: 'nota', w: 34 },
+    ],
+    todo.map((x) => x.fila)
+  );
+  // Las pendientes, en amarillo claro para verlas de un vistazo.
+  wsTodo.eachRow((row, n) => {
+    if (n > 1 && row.getCell(1).value === 'Pendiente') row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4D6' } };
+  });
+
   // Conciliados
   addSheet(
     wb,

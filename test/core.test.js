@@ -332,8 +332,14 @@ test('exportación a Excel', async () => {
   await wb.xlsx.load(buf);
   assert.deepEqual(
     wb.worksheets.map((w) => w.name),
-    ['Resumen', 'Conciliados', 'Pendientes de conciliar', 'Tiempos', 'Base panel', 'Base billeteras', 'Usuarios y titulares']
+    ['Resumen', 'Conciliados y pendientes', 'Conciliados', 'Pendientes de conciliar', 'Tiempos', 'Base panel', 'Base billeteras', 'Usuarios y titulares']
   );
+  // En una sola hoja: la partida conciliada y el pendiente, en orden de fecha y hora.
+  const todo = wb.getWorksheet('Conciliados y pendientes');
+  assert.deepEqual([2, 3].map((n) => [todo.getRow(n).getCell(1).value, todo.getRow(n).getCell(2).value]), [
+    ['Conciliado', 'Conciliado'],
+    ['Pendiente', 'Ingreso sin identificar'],
+  ]);
   const conc = wb.getWorksheet('Conciliados');
   assert.equal(conc.rowCount, 2);
   // Fecha y hora como valor de Excel en hora argentina (se puede ordenar con el filtro).
