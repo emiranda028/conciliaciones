@@ -23,8 +23,9 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
    | Cualquier otro Excel o CSV | Cualquiera | Se mapean las columnas una vez y el formato queda guardado. |
 
 2. **Concilia automáticamente** con las reglas del negocio:
-   - **Cobro:** primero entra el dinero a la billetera y después se cargan las fichas (por defecto, hasta 30 minutos).
+   - **Cobro:** primero entra el dinero a la billetera y después se cargan las fichas (por defecto, hasta 30 minutos). La hora de la billetera tiene que ser anterior a la del panel.
    - **Pago:** primero se retiran las fichas y después sale el dinero (por defecto, hasta 60 minutos).
+   - **Orden invertido:** solo como último recurso, cuando no hay otro par posible y el nombre coincide o es el único candidato (hasta 2 minutos, configurable). Queda en "Revisar" con la nota "revisar la hora".
    - **Bonificación:** el panel carga un 10% o un 20% más de lo cobrado. Los porcentajes se pueden configurar.
    - **Compensado:** carga y retiro del mismo jugador que en la billetera aparecen como un solo movimiento por la diferencia.
    - **Agrupado:** dos transferencias que corresponden a una sola carga de fichas, o al revés.

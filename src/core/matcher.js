@@ -11,7 +11,7 @@ import { MIN, norm, nameTokens, round2 } from './util.js';
 export const DEFAULT_PARAMS = {
   demoraMaxCobroMin: 30, // máx. entre el cobro en billetera y la carga de fichas
   demoraMaxPagoMin: 60, // máx. entre el retiro de fichas y el pago
-  toleranciaRelojMin: 3, // se acepta que el orden aparezca invertido por hasta estos minutos
+  toleranciaRelojMin: 2, // último recurso: orden invertido por hasta estos minutos (diferencia de relojes)
   bonificaciones: [10, 20], // % extra de fichas sobre el monto cobrado
   toleranciaMonto: 0.5, // diferencia máxima en $ para considerar montos iguales
   agrupar: true, // buscar 2 movimientos que sumen el monto del otro lado
@@ -139,10 +139,13 @@ function amountRelation(pMonto, wMonto, params, tipo) {
   return null;
 }
 
-function inWindow(p, w, params) {
+// Cobro: primero entra la plata y después se cargan las fichas (la hora de la billetera es
+// anterior a la del panel). Pago: primero se retiran las fichas y después sale la plata.
+// El orden invertido solo se acepta como último recurso (invertido = true).
+function inWindow(p, w, params, invertido = false) {
   const d = demora(p, w);
   const max = (p.tipo === 'COBRO' ? params.demoraMaxCobroMin : params.demoraMaxPagoMin) * MIN;
-  return d >= -params.toleranciaRelojMin * MIN && d <= max;
+  return d >= (invertido ? -params.toleranciaRelojMin * MIN : 0) && d <= max;
 }
 
 function scorePair(p, w, amount, rel, params) {
@@ -177,7 +180,7 @@ function lowerBound(arr, ts) {
   return lo;
 }
 
-function candidatesFor(p, walletSorted, params) {
+function candidatesFor(p, walletSorted, params, invertido = false) {
   const maxLag = Math.max(params.demoraMaxCobroMin, params.demoraMaxPagoMin) * MIN;
   const tol = params.toleranciaRelojMin * MIN;
   const from = p.ts - maxLag - tol;
@@ -185,7 +188,7 @@ function candidatesFor(p, walletSorted, params) {
   const out = [];
   for (let i = lowerBound(walletSorted, from); i < walletSorted.length && walletSorted[i].ts <= to; i += 1) {
     const w = walletSorted[i];
-    if (w.tipo === p.tipo && inWindow(p, w, params)) out.push(w);
+    if (w.tipo === p.tipo && inWindow(p, w, params, invertido)) out.push(w);
   }
   return out;
 }
@@ -250,6 +253,41 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
       matches.push(m);
     }
     dicc = aprender(dicc, matches);
+  }
+
+  // 2b) Último recurso: la billetera figura unos minutos después del panel en un cobro (o antes
+  // en un pago), como si los relojes no coincidieran. Solo si el nombre coincide o el par es
+  // único, y siempre para revisar.
+  if (params.toleranciaRelojMin > 0) {
+    const pares = [];
+    for (const p of pLibres()) {
+      for (const w of candidatesFor(p, wSorted, params, true)) {
+        if (usados.has(w.id) || rechazados.has(`${p.id}|${w.id}`) || demora(p, w) >= 0) continue;
+        const amount = amountRelation(p.monto, w.monto, params, p.tipo);
+        if (!amount) continue;
+        const rel = nameRelation(dicc, p, w);
+        if (rel === 'distinto') continue;
+        pares.push({ p, w, amount, rel, score: scorePair(p, w, amount, rel, params) });
+      }
+    }
+    const candP = new Map();
+    const candW = new Map();
+    for (const x of pares) {
+      candP.set(x.p.id, (candP.get(x.p.id) || 0) + 1);
+      candW.set(x.w.id, (candW.get(x.w.id) || 0) + 1);
+    }
+    pares.sort((a, b) => b.score - a.score);
+    for (const x of pares) {
+      if (usados.has(x.p.id) || usados.has(x.w.id)) continue;
+      if (!(x.rel === 'conocido' || x.rel === 'pista' || (candP.get(x.p.id) === 1 && candW.get(x.w.id) === 1))) continue;
+      usados.add(x.p.id);
+      usados.add(x.w.id);
+      const estado = x.amount.tipo === 'bonificacion' ? ESTADOS.BONIFICACION : ESTADOS.CONCILIADO;
+      const orden = x.p.tipo === 'COBRO' ? 'La plata figura después de la carga de fichas' : 'El pago figura antes del retiro de fichas';
+      const m = buildMatch([x.p], [x.w], estado, `${orden} (revisar la hora)`);
+      m.confianza = 'baja';
+      matches.push(m);
+    }
   }
 
   // 3) Agrupados: dos cobros/pagos que suman una sola operación del otro lado (o al revés).

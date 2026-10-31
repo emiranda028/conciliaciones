@@ -490,3 +490,18 @@ test('reporte de flujo por sucursal (hoja Detalle) y CBU/CVU como identidad', as
   assert.equal(r.matches[0].billetera[0].cbu, '0000003100049443479288');
   assert.equal(r.matches[0].confianza, 'alta');
 });
+
+test('cobro: la plata tiene que entrar antes de la carga; el orden invertido no le gana a uno correcto', () => {
+  const P = (id, h, persona) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'Ag', persona, ts: parseDateTime(`29/10/2026, ${h}`), tipo: 'COBRO', monto: 5000 });
+  const Wc = (id, h, persona) => ({ id, lado: 'billetera', origen: 'CASH', cuenta: '', persona, ts: parseDateTime(`29/10/2026, ${h}`), tipo: 'COBRO', monto: 5000 });
+  // La plata de Mirtha entra 14:10:30 y su carga es 14:11:00. Oscar carga a las 14:09:50,
+  // antes de que entre esa plata: no puede quedarse con ella aunque esté más cerca.
+  const r = conciliar([P('mirtha', '14:11:00', 'Mirtha6392'), P('oscar', '14:09:50', 'oscar55')], [Wc('w1', '14:10:30', 'Persona Ejemplo Uno')]);
+  assert.deepEqual(r.matches.map((m) => [m.panel[0].id, m.billetera[0].id]), [['mirtha', 'w1']]);
+  assert.ok(r.pendientes.some((p) => p.registro.id === 'oscar'));
+  // Si no hay otro par y el nombre coincide, se acepta como último recurso y para revisar.
+  const r2 = conciliar([P('p1', '14:09:50', 'oscar55')], [Wc('w2', '14:10:30', 'Oscar Prueba Gomez')]);
+  assert.equal(r2.matches.length, 1);
+  assert.equal(r2.matches[0].confianza, 'baja');
+  assert.match(r2.matches[0].nota, /revisar la hora/);
+});

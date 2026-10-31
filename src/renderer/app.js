@@ -1068,7 +1068,7 @@ function viewConfig() {
     body = `<div class="grid3">
       ${num('demoraMaxCobroMin', 'Demora máxima de un cobro (min)', 'Desde que entra el dinero hasta que se cargan las fichas.')}
       ${num('demoraMaxPagoMin', 'Demora máxima de un pago (min)', 'Desde que se retiran las fichas hasta que sale el dinero.')}
-      ${num('toleranciaRelojMin', 'Tolerancia de orden invertido (min)', 'Diferencia de relojes entre panel y billetera.')}
+      ${num('toleranciaRelojMin', 'Tolerancia de orden invertido (min)', 'Último recurso: si no hay otro par, acepta la plata hasta estos minutos después de la carga (y queda para revisar). 0 = nunca.')}
       ${num('toleranciaMonto', 'Tolerancia de monto ($)', 'Diferencia máxima para considerar dos montos iguales.', 0.01)}
       ${num('duplicadoMaxMin', 'Ventana de pagos duplicados (min)', 'Mismo titular y monto dentro de este lapso.')}
       ${num('anulacionMaxMin', 'Carga y retiro que se anulan (min)', 'Mismo jugador y monto en el panel, sin dinero de por medio: no quedan pendientes.')}
