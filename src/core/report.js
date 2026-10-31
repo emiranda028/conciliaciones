@@ -234,17 +234,27 @@ function styleHeader(ws) {
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
 }
 
+// Fecha y hora como valor de Excel (no texto), en hora argentina: así se puede ordenar de
+// mayor a menor o al revés con el filtro de la columna. Los movimientos sin hora (capturas)
+// muestran solo el día.
+const FMT_FECHA_HORA = 'dd/mm/yyyy hh:mm:ss';
+const FMT_FECHA = 'dd/mm/yyyy';
+const fechaExcel = (r) => (r && r.ts != null ? new Date(r.sinHora ? r.ts - (((r.ts % DIA) + DIA) % DIA) : r.ts) : null);
+
 function addSheet(wb, name, columns, rows) {
   const ws = wb.addWorksheet(name);
-  ws.columns = columns.map((c) => ({ header: c.h, key: c.k, width: c.w || 14, style: c.money ? { numFmt: '#,##0.00' } : {} }));
-  for (const r of rows) ws.addRow(r);
+  ws.columns = columns.map((c) => ({ header: c.h, key: c.k, width: c.w || 14, style: c.money ? { numFmt: '#,##0.00' } : c.fecha ? { numFmt: FMT_FECHA_HORA } : {} }));
+  for (const r of rows) {
+    const row = ws.addRow(r);
+    // Sin hora: solo el día.
+    for (const c of columns) if (c.fecha && r[`${c.k}SinHora`]) row.getCell(c.k).numFmt = FMT_FECHA;
+  }
   styleHeader(ws);
   return ws;
 }
 
 const recCols = (prefix = '') => [
-  { h: `${prefix}Fecha`, k: 'fecha', w: 11 },
-  { h: `${prefix}Hora`, k: 'hora', w: 9 },
+  { h: `${prefix}Fecha y hora (AR)`, k: 'fechaHora', w: 19, fecha: true },
   { h: `${prefix}Origen`, k: 'origen', w: 12 },
   { h: `${prefix}Agente / Cuenta`, k: 'cuenta', w: 18 },
   { h: `${prefix}Usuario / Titular`, k: 'persona', w: 28 },
@@ -255,8 +265,8 @@ const recCols = (prefix = '') => [
 
 function recRow(r, turnos) {
   return {
-    fecha: fmtDate(r.ts),
-    hora: horaDe(r),
+    fechaHora: fechaExcel(r),
+    fechaHoraSinHora: !!r.sinHora,
     turno: r.sinHora ? r.turno || '' : turnoDe(r.ts, turnos),
     origen: r.origen,
     cuenta: r.cuenta,
@@ -313,22 +323,21 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
     ws.addRow([`${txt} (${g.cantidad || 0} partidas)`, fmtDuration(g.promedio), fmtDuration(g.mediana), fmtDuration(g.maximo)]);
   }
 
-  // Conciliación
+  // Conciliados
   addSheet(
     wb,
-    'Conciliación',
+    'Conciliados',
     [
       { h: 'Estado', k: 'estado', w: 26 },
       { h: 'Confianza', k: 'confianza', w: 10 },
       { h: 'Operación', k: 'tipo', w: 10 },
       { h: 'Turno', k: 'turno', w: 14 },
-      { h: 'Panel fecha', k: 'pFecha', w: 11 },
-      { h: 'Panel hora', k: 'pHora', w: 9 },
+      { h: 'Panel fecha y hora (AR)', k: 'pFechaHora', w: 19, fecha: true },
       { h: 'Panel', k: 'pOrigen', w: 10 },
       { h: 'Agente', k: 'pCuenta', w: 16 },
       { h: 'Usuario', k: 'pPersona', w: 18 },
       { h: 'Monto panel', k: 'montoPanel', w: 13, money: true },
-      { h: 'Billetera hora', k: 'wHora', w: 9 },
+      { h: 'Billetera fecha y hora (AR)', k: 'wFechaHora', w: 19, fecha: true },
       { h: 'Billetera', k: 'wOrigen', w: 12 },
       { h: 'Cuenta', k: 'wCuenta', w: 16 },
       { h: 'Titular', k: 'wPersona', w: 28 },
@@ -340,18 +349,19 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
       { h: 'Ref. panel', k: 'pRef', w: 16 },
       { h: 'Ref. billetera', k: 'wRef', w: 28 },
     ],
-    res.matches.map((m) => ({
+    [...res.matches].sort((a, b) => (a.panel[0]?.ts ?? a.ts) - (b.panel[0]?.ts ?? b.ts)).map((m) => ({
       estado: m.estado,
       confianza: m.confianza,
       tipo: m.tipo,
       turno: turnoDe(m.panel[0]?.ts ?? m.ts, turnos),
-      pFecha: m.panel[0] ? fmtDate(m.panel[0].ts) : '',
-      pHora: joinF(m.panel, horaDe),
+      pFechaHora: fechaExcel(m.panel[0]),
+      pFechaHoraSinHora: !!m.panel[0]?.sinHora,
       pOrigen: m.panel[0]?.origen || '',
       pCuenta: joinF(m.panel, (r) => r.cuenta),
       pPersona: joinF(m.panel, (r) => r.persona),
       montoPanel: m.montoPanel,
-      wHora: joinF(m.billetera, horaDe),
+      wFechaHora: fechaExcel(m.billetera[0]),
+      wFechaHoraSinHora: !!m.billetera[0]?.sinHora,
       wOrigen: m.billetera[0]?.origen || '',
       wCuenta: joinF(m.billetera, (r) => r.cuenta),
       wPersona: joinF(m.billetera, (r) => r.persona),
@@ -368,9 +378,9 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
   // Pendientes
   addSheet(
     wb,
-    'Pendientes',
+    'Pendientes de conciliar',
     [{ h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }],
-    res.pendientes.map((p) => ({ estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
+    [...res.pendientes].sort((a, b) => a.registro.ts - b.registro.ts).map((p) => ({ estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
   );
 
   // Tiempos

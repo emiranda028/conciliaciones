@@ -332,10 +332,20 @@ test('exportación a Excel', async () => {
   await wb.xlsx.load(buf);
   assert.deepEqual(
     wb.worksheets.map((w) => w.name),
-    ['Resumen', 'Conciliación', 'Pendientes', 'Tiempos', 'Base panel', 'Base billeteras', 'Usuarios y titulares']
+    ['Resumen', 'Conciliados', 'Pendientes de conciliar', 'Tiempos', 'Base panel', 'Base billeteras', 'Usuarios y titulares']
   );
-  assert.equal(wb.getWorksheet('Conciliación').rowCount, 2);
-  assert.equal(wb.getWorksheet('Pendientes').rowCount, 2);
+  const conc = wb.getWorksheet('Conciliados');
+  assert.equal(conc.rowCount, 2);
+  // Fecha y hora como valor de Excel en hora argentina (se puede ordenar con el filtro).
+  const col = conc.getRow(1).values.indexOf('Panel fecha y hora (AR)');
+  const celda = conc.getRow(2).getCell(col);
+  assert.ok(celda.value instanceof Date);
+  assert.equal(fmtDateTime(celda.value.getTime()), fmtDateTime(r.matches[0].panel[0].ts));
+  assert.equal(celda.numFmt, 'dd/mm/yyyy hh:mm:ss');
+  assert.ok(conc.autoFilter);
+  const pend = wb.getWorksheet('Pendientes de conciliar');
+  assert.equal(pend.rowCount, 2);
+  assert.ok(pend.getRow(2).getCell(pend.getRow(1).values.indexOf('Fecha y hora (AR)')).value instanceof Date);
 });
 
 // --- sesión ---------------------------------------------------------------------------

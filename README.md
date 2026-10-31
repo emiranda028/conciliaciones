@@ -42,7 +42,7 @@ Funciona sin conexión a internet, corre directo desde un pendrive y no necesita
 
 4. **Tiempos:** para las partidas conciliadas mide cuánto se tarda en cargar las fichas después de entrar el dinero, y en pagar después de retirar las fichas. Muestra promedio, mediana, percentil 90 y máximo, tanto en general como por turno, por cajero o agente, y por cuenta. También lista las partidas más lentas.
 
-5. **Exportación a Excel:** genera un archivo con las hojas Resumen, Conciliación, Pendientes, Tiempos, Base panel, Base billeteras y Usuarios y titulares.
+5. **Exportación a Excel:** genera un archivo con las hojas Resumen, Conciliados, Pendientes de conciliar, Tiempos, Base panel, Base billeteras y Usuarios y titulares. La fecha y hora (hora argentina) va en una sola columna con valor de fecha de Excel: con el filtro del encabezado se ordena de más antiguo a más reciente o al revés. Las hojas salen ordenadas de más antiguo a más reciente.
 
 6. **Trabajo guardado:** el archivo `.conciliacion` guarda los reportes y las decisiones manuales para retomar después.
 
