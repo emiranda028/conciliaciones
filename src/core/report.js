@@ -89,7 +89,45 @@ export function filtrarResultado(res, ventana) {
   };
 }
 
-const signo = (r) => (r.tipo === 'COBRO' ? 1 : r.tipo === 'PAGO' ? -1 : 0);
+// Día operativo (medianoche, en ms) al que pertenece un instante: lo de antes de la hora
+// de inicio cuenta para el día anterior.
+export const diaOperativo = (ts, horaInicio = 6) => Math.floor((ts - horaInicio * HORA) / DIA) * DIA;
+const tsReferencia = (m) => (m.panel.length ? Math.min(...m.panel.map((r) => r.ts)) : m.ts);
+
+// Días operativos presentes en un resultado, ordenados.
+export function diasDelResultado(res, horaInicio = 6) {
+  const dias = new Set();
+  for (const m of res.matches) dias.add(diaOperativo(tsReferencia(m), horaInicio));
+  for (const p of res.pendientes) dias.add(diaOperativo(p.registro.ts, horaInicio));
+  return [...dias].sort((a, b) => a - b);
+}
+
+// Ventana desde el inicio del primer día operativo hasta el final del último.
+export function ventanaRango(desdeMs, hastaMs, horaInicio = 6) {
+  const [a, b] = desdeMs <= hastaMs ? [desdeMs, hastaMs] : [hastaMs, desdeMs];
+  return { from: ventanaDia(a, horaInicio).from, to: ventanaDia(b, horaInicio).to };
+}
+
+// Consolidado día por día (hoja "Por día" del Excel).
+export function consolidadoPorDia(res, horaInicio = 6) {
+  return diasDelResultado(res, horaInicio).map((dia) => {
+    const v = filtrarResultado(res, ventanaDia(dia, horaInicio));
+    const r = resumen(v);
+    return {
+      dia,
+      panel: r.panel,
+      billetera: r.billetera,
+      diferenciaNeta: r.diferenciaNeta,
+      nPanelOperables: r.nPanelOperables,
+      nConciliados: r.nConciliados,
+      pendPanel: v.pendientes.filter((p) => p.registro.lado === 'panel' && p.estado !== ESTADOS.ANULADO_PANEL).length,
+      pendBilletera: v.pendientes.filter((p) => p.registro.lado !== 'panel').length,
+      avance: r.avance,
+    };
+  });
+}
+
+const signo =(r) => (r.tipo === 'COBRO' ? 1 : r.tipo === 'PAGO' ? -1 : 0);
 
 function totales(list) {
   const t = { cobros: 0, pagos: 0, bonos: 0, internos: 0, comisiones: 0, nCobros: 0, nPagos: 0 };
@@ -244,7 +282,7 @@ const fechaExcel = (r) => (r && r.ts != null ? new Date(r.sinHora ? r.ts - (((r.
 
 function addSheet(wb, name, columns, rows) {
   const ws = wb.addWorksheet(name);
-  ws.columns = columns.map((c) => ({ header: c.h, key: c.k, width: c.w || 14, style: c.money ? { numFmt: '#,##0.00' } : c.fecha ? { numFmt: FMT_FECHA_HORA } : {} }));
+  ws.columns = columns.map((c) => ({ header: c.h, key: c.k, width: c.w || 14, style: c.money ? { numFmt: '#,##0.00' } : c.soloFecha ? { numFmt: FMT_FECHA } : c.fecha ? { numFmt: FMT_FECHA_HORA } : {} }));
   for (const r of rows) {
     const row = ws.addRow(r);
     // Sin hora: solo el día.
@@ -281,7 +319,7 @@ function recRow(r, turnos) {
 
 const joinF = (list, f) => list.map(f).join(' + ');
 
-export async function exportarExcel({ res, resumenData, tiemposData, panel, billetera, diccionario, turnos, titulo }) {
+export async function exportarExcel({ res, resumenData, tiemposData, panel, billetera, diccionario, turnos, titulo, porDia, horaInicioDia = 6 }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Conciliador de Fichas';
   wb.created = new Date();
@@ -322,6 +360,59 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
   ]) {
     const g = tiemposData[tipo].general;
     ws.addRow([`${txt} (${g.cantidad || 0} partidas)`, fmtDuration(g.promedio), fmtDuration(g.mediana), fmtDuration(g.maximo)]);
+  }
+
+  // Varios días: columna "Día operativo" en las hojas de detalle y hoja consolidada día por día.
+  const variosDias = !!porDia && porDia.length > 0;
+  const colDia = variosDias ? [{ h: 'Día operativo', k: 'dia', w: 12, soloFecha: true }] : [];
+  const diaCelda = (ts) => (variosDias && ts != null ? new Date(diaOperativo(ts, horaInicioDia)) : null);
+  if (variosDias) {
+    const filaDia = (d, dia) => ({
+      dia,
+      movPanel: d.nPanelOperables,
+      conciliados: d.nConciliados,
+      pendPanel: d.pendPanel,
+      pendBilletera: d.pendBilletera,
+      avance: d.avance,
+      cobrosPanel: d.panel.cobros,
+      cobrosBilletera: d.billetera.cobros,
+      pagosPanel: d.panel.pagos,
+      pagosBilletera: d.billetera.pagos,
+      netoPanel: d.panel.neto,
+      netoBilletera: d.billetera.neto,
+      diferencia: d.diferenciaNeta,
+    });
+    const filas = porDia.map((d) => filaDia(d, new Date(d.dia)));
+    const sum = (k) => round2(filas.reduce((s, f) => s + (f[k] || 0), 0));
+    const tot = { dia: 'Total', movPanel: sum('movPanel'), conciliados: sum('conciliados'), pendPanel: sum('pendPanel'), pendBilletera: sum('pendBilletera') };
+    tot.avance = tot.movPanel ? tot.conciliados / tot.movPanel : 0;
+    for (const k of ['cobrosPanel', 'cobrosBilletera', 'pagosPanel', 'pagosBilletera', 'netoPanel', 'netoBilletera', 'diferencia']) tot[k] = sum(k);
+    const wd = addSheet(
+      wb,
+      'Por día',
+      [
+        { h: `Día operativo (desde las ${horaInicioDia}:00)`, k: 'dia', w: 16, soloFecha: true },
+        { h: 'Movimientos panel', k: 'movPanel', w: 11 },
+        { h: 'Conciliados', k: 'conciliados', w: 11 },
+        { h: 'Pendientes panel', k: 'pendPanel', w: 11 },
+        { h: 'Pendientes billetera', k: 'pendBilletera', w: 11 },
+        { h: 'Avance', k: 'avance', w: 9 },
+        { h: 'Cobros panel', k: 'cobrosPanel', w: 15, money: true },
+        { h: 'Cobros billeteras', k: 'cobrosBilletera', w: 15, money: true },
+        { h: 'Pagos panel', k: 'pagosPanel', w: 15, money: true },
+        { h: 'Pagos billeteras', k: 'pagosBilletera', w: 15, money: true },
+        { h: 'Neto panel', k: 'netoPanel', w: 15, money: true },
+        { h: 'Neto billeteras', k: 'netoBilletera', w: 15, money: true },
+        { h: 'Diferencia neta', k: 'diferencia', w: 15, money: true },
+      ],
+      [...filas, tot]
+    );
+    wd.getColumn('avance').numFmt = '0.0%';
+    const ultima = wd.getRow(wd.rowCount);
+    ultima.font = { bold: true };
+    ultima.getCell('avance').numFmt = '0.0%';
+    // El total no entra en el filtro ni en el orden de la tabla.
+    wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: wd.rowCount - 1, column: wd.columnCount } };
   }
 
   // Conciliados y pendientes juntos, en orden de fecha y hora: cada fila es una partida
@@ -373,6 +464,7 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
     wb,
     'Conciliados y pendientes',
     [
+      ...colDia,
       { h: 'Situación', k: 'situacion', w: 12 },
       { h: 'Estado', k: 'estado', w: 26 },
       { h: 'Confianza', k: 'confianza', w: 10 },
@@ -390,11 +482,11 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
       { h: 'Demora', k: 'demora', w: 12 },
       { h: 'Nota', k: 'nota', w: 34 },
     ],
-    todo.map((x) => x.fila)
+    todo.map((x) => ({ dia: diaCelda(x.ts), ...x.fila }))
   );
   // Las pendientes, en amarillo claro para verlas de un vistazo.
   wsTodo.eachRow((row, n) => {
-    if (n > 1 && row.getCell(1).value === 'Pendiente') row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4D6' } };
+    if (n > 1 && row.getCell('situacion').value === 'Pendiente') row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4D6' } };
   });
 
   // Conciliados
@@ -402,6 +494,7 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
     wb,
     'Conciliados',
     [
+      ...colDia,
       { h: 'Estado', k: 'estado', w: 26 },
       { h: 'Confianza', k: 'confianza', w: 10 },
       { h: 'Operación', k: 'tipo', w: 10 },
@@ -424,6 +517,7 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
       { h: 'Ref. billetera', k: 'wRef', w: 28 },
     ],
     [...res.matches].sort((a, b) => (a.panel[0]?.ts ?? a.ts) - (b.panel[0]?.ts ?? b.ts)).map((m) => ({
+      dia: diaCelda(tsReferencia(m)),
       estado: m.estado,
       confianza: m.confianza,
       tipo: m.tipo,
@@ -453,8 +547,8 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
   addSheet(
     wb,
     'Pendientes de conciliar',
-    [{ h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }],
-    [...res.pendientes].sort((a, b) => a.registro.ts - b.registro.ts).map((p) => ({ estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
+    [...colDia, { h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }],
+    [...res.pendientes].sort((a, b) => a.registro.ts - b.registro.ts).map((p) => ({ dia: diaCelda(p.registro.ts), estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
   );
 
   // Tiempos

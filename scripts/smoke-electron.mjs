@@ -56,6 +56,12 @@ try {
   await win.waitForSelector('[data-view=conciliacion] .count');
   const n = await win.$eval('[data-view=conciliacion] .count', (e) => e.textContent.trim());
   if (n !== '2') fail(`se esperaban 2 partidas conciliadas y hubo ${n}`);
+  // Exportar: ventana para elegir un día, un rango o todo lo cargado (se cancela antes de guardar).
+  await win.evaluate(() => document.querySelector('[data-act=exportar]').click());
+  await win.waitForSelector('#exp-ok', { timeout: 10000 }).catch(() => fail('no se abrió la ventana de exportación'));
+  const modos = await win.$$eval('input[name="exp-modo"]', (r) => r.map((x) => x.value).join(','));
+  if (modos !== 'dia,rango,todo') fail(`opciones de exportación: ${modos}`);
+  await win.evaluate(() => document.querySelector('.modal [data-close]').click());
   // OCR de una captura de ejemplo (datos inventados): verifica que el lector viaje con la app.
   await win.evaluate(() => document.querySelector('[data-view=cargar]').click());
   await win.setInputFiles('#file-in', [path.resolve('test/fixtures/captura-ejemplo.png')]);
@@ -83,7 +89,7 @@ try {
   await win.evaluate(() => document.querySelector('[data-close]').click());
   await win.waitForTimeout(1000);
   if (!fs.existsSync(path.join(dir, 'ConciliadorDatos', 'configuracion.json'))) fail('no se guardó la configuración junto al ejecutable');
-  if (!process.exitCode) console.log(`OK: la app abre, lee los reportes, concilia (2/2), lee capturas con OCR (${filasOcr}/4), comprobantes, PDF y lotes de varias imágenes, bloquea la red y guarda la configuración.`);
+  if (!process.exitCode) console.log(`OK: la app abre, lee los reportes, concilia (2/2), ofrece exportar por día, rango o todo, lee capturas con OCR (${filasOcr}/4), comprobantes, PDF y lotes de varias imágenes, bloquea la red y guarda la configuración.`);
 } finally {
   await app.close();
 }

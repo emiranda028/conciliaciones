@@ -22,9 +22,9 @@ import {
 import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { imagenesDePdf } from '../core/pdf.js';
-import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto } from '../core/report.js';
+import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto, diasDelResultado, consolidadoPorDia, ventanaRango, filtrarResultado, resumen, tiempos } from '../core/report.js';
 import { ESTADOS, DEFAULT_PARAMS } from '../core/matcher.js';
-import { fmtDate, fmtTime, horaDe, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay, parseNumber } from '../core/util.js';
+import { fmtDate, fmtTime, horaDe, fmtDateTime, fmtDuration, fmtMoney, round2, cleanText, isoDay, dayFromIso, parseNumber } from '../core/util.js';
 import ExcelJS from 'exceljs';
 
 // ---------------------------------------------------------------------------
@@ -1341,20 +1341,95 @@ function mapearColumnas(f) {
 // ---------------------------------------------------------------------------
 // Acciones
 
-async function exportar() {
+// Exportar: un día operativo, un rango de días o todo lo cargado (se suben varios días juntos).
+function exportar() {
   const run = state.run;
-  const titulo = `${run.ventana ? `Conciliación del día operativo ${fmtDate(run.ventana.from)}` : 'Conciliación'}${etiquetaRun(run) ? ` · ${etiquetaRun(run)}` : ''}`;
+  const h = state.config.horaInicioDia;
+  const dias = diasDelResultado(run.completo, h);
+  if (!dias.length) {
+    toast('No hay movimientos para exportar.', true);
+    return;
+  }
+  const primero = isoDay(dias[0]);
+  const ultimo = isoDay(dias[dias.length - 1]);
+  const porDia = new Map(consolidadoPorDia(run.completo, h).map((d) => [d.dia, d]));
+  const diaDef = state.dia && dias.includes(dayFromIso(state.dia)) ? state.dia : ultimo;
+  const modoDef = state.dia || dias.length === 1 ? 'dia' : 'todo';
+  const lista = dias
+    .map((d) => {
+      const x = porDia.get(d);
+      return `<tr><td class="nowrap">${esc(fmtDate(d))}</td><td class="num">${x.nPanelOperables}</td><td class="num">${x.pendPanel + x.pendBilletera}</td><td class="num">${(x.avance * 100).toFixed(1)}%</td></tr>`;
+    })
+    .join('');
+  modal({
+    title: 'Exportar a Excel',
+    body: `<p class="small muted">Cada día operativo va de las ${h}:00 a las ${h}:00 del día siguiente. Días cargados: ${dias.length} (${esc(fmtDate(dias[0]))} al ${esc(fmtDate(dias[dias.length - 1]))}).</p>
+      <div class="grid3" style="align-items:end;margin-top:8px">
+        <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="dia" ${modoDef === 'dia' ? 'checked' : ''} /> Un día</label>
+        <label class="field"><span>Día operativo</span><input type="date" id="exp-dia" value="${esc(diaDef)}" min="${primero}" max="${ultimo}" /></label>
+        <span></span>
+        <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="rango" /> Rango de días</label>
+        <label class="field"><span>Desde</span><input type="date" id="exp-desde" value="${primero}" min="${primero}" max="${ultimo}" /></label>
+        <label class="field"><span>Hasta</span><input type="date" id="exp-hasta" value="${ultimo}" min="${primero}" max="${ultimo}" /></label>
+        <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="todo" ${modoDef === 'todo' ? 'checked' : ''} /> Todo lo cargado</label>
+      </div>
+      <label class="row small" style="margin-top:12px"><input type="checkbox" id="exp-pordia" checked /> Consolidado: agregar la hoja "Por día" (un renglón por día con avance, pendientes y montos) y la columna "Día operativo" en el detalle</label>
+      <h3>Días cargados</h3>
+      <div class="scroll" style="max-height:30vh"><table class="tbl"><thead><tr><th>Día operativo</th><th class="num">Mov. panel</th><th class="num">Pendientes</th><th class="num">Avance</th></tr></thead><tbody>${lista}</tbody></table></div>`,
+    foot: `<button class="btn" data-close>Cancelar</button><button class="btn primary" id="exp-ok">Exportar</button>`,
+    onMount(el, close) {
+      const modo = () => $('input[name="exp-modo"]:checked', el)?.value || 'todo';
+      const marcar = (v) => ($(`input[name="exp-modo"][value="${v}"]`, el).checked = true);
+      $('#exp-dia', el).addEventListener('input', () => marcar('dia'));
+      ['#exp-desde', '#exp-hasta'].forEach((s) => $(s, el).addEventListener('input', () => marcar('rango')));
+      $('#exp-ok', el).addEventListener('click', async () => {
+        let desde;
+        let hasta;
+        if (modo() === 'dia') desde = hasta = dayFromIso($('#exp-dia', el).value);
+        else if (modo() === 'rango') {
+          desde = dayFromIso($('#exp-desde', el).value);
+          hasta = dayFromIso($('#exp-hasta', el).value);
+          if (desde != null && hasta != null && desde > hasta) [desde, hasta] = [hasta, desde];
+        } else [desde, hasta] = [dias[0], dias[dias.length - 1]];
+        if (desde == null || hasta == null) {
+          toast('Elegí las fechas.', true);
+          return;
+        }
+        const enRango = dias.filter((d) => d >= desde && d <= hasta);
+        if (!enRango.length) {
+          toast('No hay movimientos en esas fechas.', true);
+          return;
+        }
+        close();
+        await exportarPeriodo({ desde, hasta, todo: modo() === 'todo', consolidado: $('#exp-pordia', el).checked && (enRango.length > 1 || modo() !== 'dia') });
+      });
+    },
+  });
+}
+
+async function exportarPeriodo({ desde, hasta, todo, consolidado }) {
+  const run = state.run;
+  const h = state.config.horaInicioDia;
+  const ventana = todo ? null : ventanaRango(desde, hasta, h);
+  const res = filtrarResultado(run.completo, ventana);
+  const dentro = (r) => !ventana || (r.ts >= ventana.from && r.ts < ventana.to);
+  const unDia = desde === hasta;
+  const periodo = unDia ? `del día operativo ${fmtDate(desde)}` : `del ${fmtDate(desde)} al ${fmtDate(hasta)}`;
+  const titulo = `Conciliación ${periodo}${etiquetaRun(run) ? ` · ${etiquetaRun(run)}` : ''}`;
   const buf = await exportarExcel({
-    res: run.vista,
-    resumenData: run.resumen,
-    tiemposData: run.tiempos,
-    panel: run.ventana ? run.panel.filter((r) => r.ts >= run.ventana.from && r.ts < run.ventana.to) : run.panel,
-    billetera: run.ventana ? run.billetera.filter((r) => r.ts >= run.ventana.from && r.ts < run.ventana.to) : run.billetera,
+    res,
+    resumenData: resumen(res),
+    tiemposData: tiempos(res, state.config.turnos),
+    panel: run.panel.filter(dentro),
+    billetera: run.billetera.filter(dentro),
     diccionario: state.config.diccionario,
     turnos: state.config.turnos,
     titulo,
+    porDia: consolidado ? consolidadoPorDia(res, h) : null,
+    horaInicioDia: h,
   });
-  const nombre = `Conciliacion_${run.linea ? `${run.linea}_` : run.agentes ? `${run.agentes.join('-').replace(/[^\w.-]+/g, '_').slice(0, 60)}_` : ''}${state.dia || isoDay(Date.now())}.xlsx`;
+  const quien = run.linea ? `${run.linea}_` : run.agentes ? `${run.agentes.join('-').replace(/[^\w.-]+/g, '_').slice(0, 60)}_` : '';
+  const nombre = `Conciliacion_${quien}${unDia ? isoDay(desde) : `${isoDay(desde)}_al_${isoDay(hasta)}`}.xlsx`;
   const p = await api.saveFile(nombre, new Uint8Array(buf), [{ name: 'Excel', extensions: ['xlsx'] }]);
   if (p) toast(`Guardado: ${p}`);
 }

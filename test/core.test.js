@@ -7,7 +7,7 @@ import { parseNumber, parseDateTime, fmtDateTime, MIN } from '../src/core/util.j
 import { parseCsv, parsePasted } from '../src/core/tabular.js';
 import { detect, assignIds, parseGeneric } from '../src/core/importers.js';
 import { conciliar, ESTADOS, nameHint } from '../src/core/matcher.js';
-import { tiempos, turnoDe, resumen, exportarExcel, ventanaDia } from '../src/core/report.js';
+import { tiempos, turnoDe, resumen, exportarExcel, ventanaDia, diaOperativo, diasDelResultado, consolidadoPorDia, ventanaRango, filtrarResultado } from '../src/core/report.js';
 import { dataset, tableToFuente, mergeConfig, serializarTrabajo, deserializarTrabajo, unirDiccionario } from '../src/core/session.js';
 
 const W = (s) => parseDateTime(s); // hora de pared
@@ -352,6 +352,38 @@ test('exportación a Excel', async () => {
   const pend = wb.getWorksheet('Pendientes de conciliar');
   assert.equal(pend.rowCount, 2);
   assert.ok(pend.getRow(2).getCell(pend.getRow(1).values.indexOf('Fecha y hora (AR)')).value instanceof Date);
+});
+
+test('exportación de varios días: rango, consolidado por día', async () => {
+  const d2 = (hora) => ({ ts: W(`22/09/2026, ${hora}`) });
+  const panel = [P('10:01:00', 'COBRO', 1000, 'a1'), P('03:00:00', 'COBRO', 300, 'a2', d2('03:00:00')), P('10:01:00', 'COBRO', 2000, 'a3', d2('10:01:00'))];
+  const bill = [B('10:00:00', 'COBRO', 1000, 'X'), B('10:00:00', 'COBRO', 2000, 'Z', d2('10:00:00'))];
+  const r = conciliar(panel, bill);
+  const d21 = Date.UTC(2026, 8, 21);
+  const d22 = Date.UTC(2026, 8, 22);
+  // Las 03:00 del 22 todavía son del día operativo 21.
+  assert.equal(diaOperativo(W('22/09/2026, 03:00:00')), d21);
+  assert.deepEqual(diasDelResultado(r), [d21, d22]);
+  const pd = consolidadoPorDia(r);
+  assert.deepEqual(pd.map((d) => [d.nPanelOperables, d.nConciliados, d.pendPanel]), [[2, 1, 1], [1, 1, 0]]);
+  // Rango de un solo día = ventana del día operativo; el rango al revés también vale.
+  assert.deepEqual(ventanaRango(d22, d22), ventanaDia(d22));
+  assert.equal(filtrarResultado(r, ventanaRango(d22, d21)).matches.length, 2);
+
+  const buf = await exportarExcel({ res: r, resumenData: resumen(r), tiemposData: tiempos(r), panel, billetera: bill, diccionario: {}, turnos: undefined, titulo: 'x', porDia: pd, horaInicioDia: 6 });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  assert.equal(wb.worksheets[1].name, 'Por día');
+  const ws = wb.getWorksheet('Por día');
+  assert.equal(ws.rowCount, 4); // encabezado, 2 días y total
+  assert.equal(ws.getRow(4).getCell(1).value, 'Total');
+  assert.equal(ws.getRow(4).getCell(2).value, 3);
+  assert.equal(ws.getRow(4).getCell(3).value, 2);
+  const todo = wb.getWorksheet('Conciliados y pendientes');
+  assert.equal(todo.getRow(1).getCell(1).value, 'Día operativo');
+  assert.equal(todo.getRow(3).getCell(1).value.getTime(), d21); // el pendiente de las 03:00 del 22
+  assert.equal(todo.getRow(3).getCell(2).value, 'Pendiente');
+  assert.equal(todo.getRow(4).getCell(1).value.getTime(), d22);
 });
 
 // --- sesión ---------------------------------------------------------------------------

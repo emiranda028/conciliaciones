@@ -148,7 +148,15 @@ app, concilia datos de ejemplo y verifica que la red esté bloqueada) y lo publi
 2. En **Cargar reportes**, arrastrar los archivos del día o pegar lo copiado del panel.
 3. Revisar que cada archivo se haya reconocido con el formato correcto (se puede cambiar en la lista) y apretar **Conciliar**.
 4. Revisar **Pendientes** y las partidas marcadas como "Revisar" en **Conciliadas**.
-5. Hacer clic en **Exportar a Excel**.
+5. Hacer clic en **Exportar a Excel** y elegir qué exportar:
+   - **Un día**: un día operativo (de las 6:00 a las 6:00 del día siguiente).
+   - **Rango de días**: desde un día hasta otro, ambos incluidos.
+   - **Todo lo cargado**: todos los días que se subieron.
+
+   Con **Consolidado** marcado (es lo que viene marcado), el Excel trae además la hoja **Por día**: un
+   renglón por día operativo con movimientos del panel, conciliados, pendientes, avance, cobros, pagos y
+   la diferencia, más una fila de total. Las hojas de detalle suman la columna "Día operativo" para
+   filtrar por día. Así se pueden subir varios días juntos y exportarlos por separado o todos juntos.
 
 La configuración (reglas, turnos, usuarios y titulares, formatos guardados) se guarda en la carpeta
 `ConciliadorDatos` junto al `.exe`. Si el pendrive está protegido contra escritura, se guarda en la
