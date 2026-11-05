@@ -53,7 +53,8 @@ export function turnoDeTexto(texto, turnos = DEFAULT_TURNOS) {
     const exacto = turnos.find((t) => norm(t.nombre) === `turno${m[1]}`);
     return exacto?.nombre || turnos[Number(m[1]) - 1]?.nombre || '';
   }
-  const i = [/\s(tm|ma[nñ]ana)\s/i, /\s(tt|tarde)\s/i, /\s(tn|noche)\s/i].findIndex((re) => re.test(s));
+  // También "t.m" / "t m" ("mov uala 30-10 t.m Joni").
+  const i = [/\s(t ?m|ma[nñ]ana)\s/i, /\s(t ?t|tarde)\s/i, /\s(t ?n|noche)\s/i].findIndex((re) => re.test(s));
   if (i < 0) return '';
   const t = turnoDe([10, 18, 2][i] * HORA, turnos);
   return t === 'Sin turno' ? '' : t;

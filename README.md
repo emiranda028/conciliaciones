@@ -95,6 +95,9 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - Si la captura muestra la hora del movimiento, se usa: ese movimiento se cruza por horario y entra
   en la medición de tiempos. Las capturas chicas se agrandan antes de leerlas para que el OCR no
   confunda el "$" con un número.
+- **Ualá y capturas en modo oscuro** (letra clara sobre fondo negro, como Ualá o Brubank): la imagen se
+  invierte antes de leerla. En Ualá el monto ("+3.100,00", sin "$") queda entre el nombre y "Hoy 13:46":
+  se toma la hora, y "Hoy" es el día del nombre del archivo o del título del PDF ("30-10").
 - Mercado Pago en la compu ("Actividad"): titular arriba con la hora, y abajo la leyenda, el estado
   ("Aprobado", "Dinero disponible") y el monto. El estado no se toma como parte del nombre.
 - Mercado Pago: lee los encabezados de fecha ("Hoy", "Ayer", "Lunes 5 de octubre"), la hora de cada

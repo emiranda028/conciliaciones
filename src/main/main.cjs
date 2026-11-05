@@ -110,20 +110,39 @@ async function getOcr() {
 
 // Las capturas de celular suelen tener letra chica: al doble de tamaño el OCR confunde
 // mucho menos el "$" con un 5 o un 8.
+// Capturas en modo oscuro (Ualá, Brubank: letra clara sobre fondo negro): el OCR pierde la letra
+// gris ("Hoy 13:46") y confunde el "+". Se pasan a gris, se invierten y se estira el contraste.
+function esOscura(px) {
+  let suma = 0;
+  let n = 0;
+  for (let i = 0; i < px.length; i += 4 * 97) {
+    suma += 0.114 * px[i] + 0.587 * px[i + 1] + 0.299 * px[i + 2];
+    n += 1;
+  }
+  return n > 0 && suma / n < 110;
+}
+
 function prepararImagen(buf) {
   try {
-    const img = nativeImage.createFromBuffer(buf);
+    let img = nativeImage.createFromBuffer(buf);
     const { width } = img.getSize();
-    if (!width || width >= 1400) return buf;
-    return img.resize({ width: width * 2, quality: 'best' }).toPNG();
+    if (!width) return { img: buf, oscura: false };
+    if (width < 1400) img = img.resize({ width: width * 2, quality: 'best' });
+    const px = img.toBitmap(); // BGRA
+    if (!esOscura(px)) return { img: width < 1400 ? img.toPNG() : buf, oscura: false };
+    for (let i = 0; i < px.length; i += 4) {
+      const v = 255 - (0.114 * px[i] + 0.587 * px[i + 1] + 0.299 * px[i + 2]);
+      px[i] = px[i + 1] = px[i + 2] = Math.max(0, Math.min(255, (v - 60) * 1.4));
+    }
+    return { img: nativeImage.createFromBitmap(px, img.getSize()).toPNG(), oscura: true };
   } catch {
-    return buf;
+    return { img: buf, oscura: false };
   }
 }
 
 ipcMain.handle('ocr:leer', async (_e, data) => {
   const w = await getOcr();
-  const img = prepararImagen(Buffer.from(data));
+  const { img, oscura } = prepararImagen(Buffer.from(data));
   const { data: d } = await w.recognize(img, {}, { blocks: true });
   const lines = lineasOcr(d);
   // Comprobantes (un movimiento por imagen, letra grande): una segunda lectura con
@@ -139,7 +158,8 @@ ipcMain.handle('ocr:leer', async (_e, data) => {
     } catch {
       /* sin tamaño: se queda con la primera lectura */
     }
-    if (!ancha) return lines;
+    // También en modo oscuro (Ualá): el monto queda entre el nombre y la hora.
+    if (!ancha && !oscura) return lines;
     try {
       await w.setParameters({ tessedit_pageseg_mode: '11' });
       const { data: d3 } = await w.recognize(img, {}, { blocks: true });

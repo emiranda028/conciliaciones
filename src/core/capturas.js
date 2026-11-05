@@ -180,6 +180,8 @@ const esLeyendaTransferencia = (s) => {
 export function leyendaVisible(detalle) {
   const t = String(detalle || '').replace(/\s+/g, ' ').trim();
   if (!/[a-záéíóúñ]{2,}/i.test(t)) return '';
+  // "Hoy" / "Ayer" son la fecha, no una leyenda (Ualá: "Hoy 13:46").
+  if (/^(hoy|ayer)$/i.test(t)) return '';
   // Tolera palabras pegadas ("Transferenciarecibida") y restos del ícono delante ("ls Transferencia enviada").
   return esLeyendaTransferencia(t) ? '' : t;
 }
@@ -377,7 +379,10 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     //   C) (Prex, Naranja X) fecha arriba; renglón 1: leyenda + monto; renglón 2: titular solo.
     let nombreFinal = nombre;
     let truncadoFinal = truncado;
-    let leyendaTxt = sinFecha(detalle).replace(HORA_RE, ' ');
+    // Sin los botones del celular que el OCR lee al pie ("Transferencia recibida II O <").
+    let leyendaTxt = sinFecha(detalle)
+      .replace(HORA_RE, ' ')
+      .replace(/(\s+(I{1,3}|l{1,3}|\||[O0o]|[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s]+))+\s*$/, '');
     let textoTipo = detalle;
     const resto = sinFecha(detalle).replace(HORA_RE, ' ').trim();
     const nombreEsLeyenda = esLeyendaTransferencia(nombre);
@@ -560,17 +565,32 @@ export function resolverComprobantes(filas, cuenta = '') {
 // consecutivas: las listas están en orden (páginas de un PDF) y solo se une cada una con la siguiente.
 export function unirCapturas(listas, { consecutivas = false } = {}) {
   if (consecutivas) {
-    const filas = [];
-    let quitadas = 0;
-    for (const l of listas.filter((x) => x.length)) {
-      let k = Math.min(filas.length, l.length);
+    // Cuántas filas del final de "a" son las primeras de "b".
+    const solape = (a, b) => {
+      let k = Math.min(a.length, b.length);
       for (; k >= 1; k -= 1) {
         let ok = true;
-        for (let t = 0; t < k && ok; t += 1) ok = claveFila(filas[filas.length - k + t]) === claveFila(l[t]);
+        for (let t = 0; t < k && ok; t += 1) ok = claveFila(a[a.length - k + t]) === claveFila(b[t]);
         if (ok) break;
       }
-      quitadas += k;
-      filas.push(...l.slice(k));
+      return k;
+    };
+    const filas = [];
+    let quitadas = 0;
+    let anterior = null;
+    for (const l of listas.filter((x) => x.length)) {
+      if (!anterior) {
+        filas.push(...l);
+        anterior = l;
+        continue;
+      }
+      // Las capturas pueden ir hacia abajo (el final de la anterior se repite al principio de
+      // esta) o hacia arriba (el final de esta se repite al principio de la anterior).
+      const abajo = solape(anterior, l);
+      const arriba = abajo ? 0 : solape(l, anterior);
+      quitadas += abajo + arriba;
+      filas.push(...l.slice(abajo, l.length - arriba));
+      anterior = l;
     }
     return { filas, quitadas };
   }
@@ -617,6 +637,8 @@ export function filasATabla(filas, cuenta) {
 // de su monto: el texto de arriba es el titular, el de abajo la leyenda, y la hora la que esté
 // a la misma altura. Devuelve renglones en el formato A ("Titular $monto" / "Leyenda hora").
 const PALABRA_PLATA = /^[+\-−–]?\$[\d.,]+$/;
+// Sin "$" pero con signo ("+3.100,00", "-308.100,00"), como en Ualá.
+const PALABRA_PLATA_SIN_PESOS = /^[+\-−–]\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?$/;
 export function lineasPorMonto(lines) {
   const words = lines
     .flatMap((l) => (l.words || []).map((w) => ({ text: String(w.text || '').trim(), bbox: w.bbox, conf: w.confidence ?? l.confidence })))
@@ -627,6 +649,7 @@ export function lineasPorMonto(lines) {
   for (let i = 0; i < words.length; i += 1) {
     const w = words[i];
     if (PALABRA_PLATA.test(w.text) && /\d/.test(w.text)) montos.push({ w, texto: w.text });
+    else if (PALABRA_PLATA_SIN_PESOS.test(w.text)) montos.push({ w, texto: `${w.text[0]}$${w.text.slice(1)}` });
     else if (/^[+\-−–]$/.test(w.text) && words[i + 1] && PALABRA_PLATA.test(words[i + 1].text) && Math.abs(cy(words[i + 1]) - cy(w)) < 20) {
       montos.push({ w: words[i + 1], texto: `${w.text}${words[i + 1].text}` });
       i += 1;
@@ -666,7 +689,11 @@ export function lineasPorMonto(lines) {
     const centro = (r) => (r.y0 + r.y1) / 2;
     const arriba = texto.filter((r) => centro(r) < y - 0.5 * altoTipico && /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(r.text));
     const abajo = texto.filter((r) => centro(r) > y + 0.5 * altoTipico);
-    const titular = sinEstado(arriba.length ? arriba[arriba.length - 1].text : '');
+    // Las iniciales del avatar ("GR", "VS") quedan a la izquierda, separadas del nombre.
+    const fila = arriba.at(-1);
+    const ws = fila ? [...fila.ws] : [];
+    if (ws.length > 2 && /^[A-ZÁÉÍÓÚÑ]{1,3}$/.test(ws[0].text) && ws[1].bbox.x0 - ws[0].bbox.x1 > 1.5 * altoTipico) ws.shift();
+    const titular = sinEstado(ws.map((w) => w.text).join(' '));
     const leyenda = sinEstado(abajo.map((r) => r.text).join(' '));
     const conf = Math.min(...[...(arriba.at(-1)?.ws || []), m.w].map((w) => w.conf ?? 90));
     out.push({ text: `${titular} ${m.texto}`, confidence: conf });

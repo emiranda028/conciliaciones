@@ -528,3 +528,39 @@ test('captura ancha de la compu leída por palabras: se arma cada movimiento alr
     ]
   );
 });
+
+test('Ualá: nombre arriba, "Hoy 13:46" abajo y monto con signo y sin "$" en el medio', async () => {
+  const { lineasPorMonto } = await import('../src/core/capturas.js');
+  const W = (text, x0, y0, x1, y1, confidence = 95) => ({ text, bbox: { x0, y0, x1, y1 }, confidence });
+  const fila = (y, nombre, hora, monto) => [
+    W(nombre.split(' ')[0].slice(0, 2).toUpperCase(), 50, y + 10, 140, y + 60, 60),
+    ...nombre.split(' ').map((t, i) => W(t, 230 + i * 180, y, 400 + i * 180, y + 40)),
+    W('Hoy', 230, y + 70, 300, y + 105),
+    W(hora, 310, y + 70, 420, y + 105),
+    W(monto, 1050, y + 35, 1380, y + 75),
+  ];
+  const lines = [{ words: [W('Movimientos', 250, 160, 660, 220), ...fila(520, 'GRISELDA PRUEBA R...', '13:46', '-308.100,00'), ...fila(810, 'VALLEJOS, MARIA INVENTADA', '13:25', '+3.100,00')] }];
+  const filas = parsearCaptura(lineasPorMonto(lines), { hoy: new Date(Date.UTC(2026, 9, 30, 12)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.hora, f.nombre, f.truncado, f.tipo, f.monto, f.leyenda]),
+    [
+      ['30/10/2026', '13:46', 'GRISELDA PRUEBA R', true, 'PAGO', 308100, ''],
+      ['30/10/2026', '13:25', 'VALLEJOS, MARIA INVENTADA', false, 'COBRO', 3100, ''],
+    ]
+  );
+});
+
+test('páginas de un PDF tomadas de abajo hacia arriba: el repetido al final de una página se quita', () => {
+  const F = (nombre, monto) => ({ fecha: '30/10/2026', hora: '', tipo: 'COBRO', monto, nombre });
+  const p2 = [F('Yanina Prueba', 19800), F('Mateo Ejemplo', 8500)];
+  const p3 = [F('Irma Inventada', 10000), F('Melina Prueba', 17000), F('Yanina Prueba', 19800)];
+  const { filas, quitadas } = unirCapturas([p2, p3], { consecutivas: true });
+  assert.equal(quitadas, 1);
+  assert.deepEqual(filas.map((f) => f.nombre), ['Yanina Prueba', 'Mateo Ejemplo', 'Irma Inventada', 'Melina Prueba']);
+});
+
+test('turno "t.m" en el título del PDF', async () => {
+  const { turnoDeTexto } = await import('../src/core/report.js');
+  assert.equal(turnoDeTexto('mov uala y brubank 30-10 t.m Joni'), 'Turno 1');
+  assert.equal(turnoDeTexto('capturas 30-10 t.t'), 'Turno 2');
+});

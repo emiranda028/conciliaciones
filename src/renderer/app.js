@@ -479,7 +479,7 @@ async function ocrArchivos(files, cap, progreso) {
       const lines = Array.isArray(res) ? res : res.lines;
       const lines2 = Array.isArray(res) ? [] : res.lines2 || [];
       // "Hoy"/"Ayer" y el año se toman de la fecha del archivo (cuando se sacó la captura), en hora argentina.
-      const hoy = new Date((files[i].lastModified || Date.now()) - 3 * 3600000);
+      let hoy = new Date((files[i].lastModified || Date.now()) - 3 * 3600000);
       let filas;
       if (esComprobante(lines.concat(lines2))) {
         const c = parsearComprobante(lines, lines2, { imagen: files[i].name, hoy });
@@ -488,6 +488,11 @@ async function ocrArchivos(files, cap, progreso) {
         // Si la captura no muestra el día, se toma el del nombre del archivo o del título del PDF ("07-10").
         const pdf = files[i].pdf;
         const fechaDefecto = fechaDeNombre(pdf?.titulo || '', hoy) || fechaDeNombre(pdf?.archivo || files[i].name, hoy);
+        // Con el día en el nombre ("30-10"), "Hoy" en la captura es ese día y no el de la descarga.
+        if (fechaDefecto) {
+          const [d, m, y] = fechaDefecto.split('/').map(Number);
+          hoy = new Date(Date.UTC(y, m - 1, d, 12));
+        }
         filas = parsearCaptura(lines, { imagen: files[i].name, hoy, fechaDefecto });
         // Captura ancha (Mercado Pago en la compu): se prueba también la lectura por palabras y
         // se queda con la que dé más movimientos completos.
