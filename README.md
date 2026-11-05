@@ -86,6 +86,11 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   leyenda arriba y "de/a Titular" abajo ("Te enviaron dinero" / "de Victor…", como Personal Pay); o
   fecha arriba, leyenda con el monto y titular abajo (Prex, Naranja X). Si la lista muestra solo la
   hora, sin el día, se supone el día de la captura y la fila queda para revisar.
+- **Prex:** "CARGA TRANSFERENCIA DE …" es cobro y "TRANSFERENCIA CVU/CBU" es pago (sin titular).
+  "PREX A PREX DE …" es cobro, con el titular en el mismo renglón. Cuando la app corta el titular
+  ("CARGA / TRANSFERENCIA DE…"), la fila queda sin nombre y se cruza por monto y turno. El ícono redondo
+  de la izquierda, que el OCR a veces lee como "-", no cuenta como signo: el "-" de los pagos va pegado
+  al "$". El "RENDIMIENTO ARS" (intereses de la cuenta) no se carga.
 - **Cobro o pago:** manda el signo del monto ("- $ 95.000,00" es pago, "+ $ 5.000,00" es cobro). Si no
   tiene signo, se decide por la leyenda ("Te enviaron dinero", "CARGA TRANSFERENCIA DE"…). Si el signo y
   la leyenda se contradicen, la fila queda para revisar.

@@ -595,3 +595,38 @@ test('AstroPay: montos "+8,000.00 ARS", nombre en dos renglones, fallidas y ileg
     ]
   );
 });
+
+test('Prex: ícono leído como "-", titular cortado, CVU/CBU, Prex a Prex y rendimientos', () => {
+  // Coordenadas como las de una captura de 720 px agrandada al doble. Nombres inventados.
+  const L = (y, partes, confidence = 92) => {
+    const words = partes.map(([x0, text, x1]) => ({ text, bbox: { x0, y0: y, x1, y1: y + 40 }, confidence: 95 }));
+    return { text: partes.map((p) => p[1]).join(' '), confidence, bbox: { x0: partes[0][0], y0: y, x1: 1340, y1: y + 40 }, words };
+  };
+  const lines = [
+    L(10, [[94, '14:04', 222]]),
+    L(80, [[100, '31', 150], [170, 'oct', 240]]),
+    L(150, [[290, 'TRANSFERENCIA', 750]]),
+    L(190, [[920, '-', 940], [964, '$', 994], [1016, '50.000,00', 1340]]),
+    L(230, [[290, 'CVvu/CBU', 560]]),
+    L(300, [[290, 'CARGA', 485]]),
+    // El ícono redondo verde, lejos del monto: no es el signo.
+    L(340, [[138, '-', 215], [974, '$', 1004], [1027, '10.000,00', 1340]], 55),
+    L(380, [[138, '—', 215], [288, 'TRANSFERENCIA', 751], [773, 'DE...', 874]]),
+    L(450, [[290, 'CARGA', 485], [502, 'TRANSFERENCIA', 965]]),
+    L(490, [[134, 'JE', 214], [1006, '$', 1036], [1060, '5.000,00', 1340]], 70),
+    L(530, [[138, '—', 215], [293, 'DE', 356], [382, 'ANA', 480], [500, 'PRUEBA', 700], [720, 'FICTICIA', 900]]),
+    L(600, [[138, '=', 215], [293, 'PREX', 425], [443, 'A', 480], [502, 'PREX', 634], [656, 'DE', 719], [745, 'LUZ', 860], [1006, '$', 1036], [1060, '7.000,00', 1340]]),
+    L(680, [[100, '29', 150], [170, 'oct', 240]]),
+    L(750, [[290, 'RENDIMIENTO', 700], [720, 'ARS', 800], [1120, '$', 1150], [1170, '1,94', 1340]]),
+  ];
+  const f = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 31, 14)) });
+  assert.deepEqual(
+    f.map((x) => [x.fecha, x.tipo, x.monto, x.nombre, x.leyenda, !!x.dudoso]),
+    [
+      ['31/10/2026', 'PAGO', 50000, '', 'TRANSFERENCIA CVU/CBU', false],
+      ['31/10/2026', 'COBRO', 10000, '', 'CARGA TRANSFERENCIA DE', false],
+      ['31/10/2026', 'COBRO', 5000, 'ANA PRUEBA FICTICIA', 'CARGA TRANSFERENCIA DE', false],
+      ['31/10/2026', 'COBRO', 7000, 'LUZ', 'PREX A PREX DE', false],
+    ]
+  );
+});

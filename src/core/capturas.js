@@ -89,8 +89,8 @@ function contraparte(txt, seguro = false) {
 }
 
 const FECHA = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
-const COBRO_RE = /recibid|recibiste|te enviaron|te transfiri|te pag[oó]|cobr|ingres|acredit|deposit|reintegr|devoluci|\bcarga\b|transferencia de\b/i;
-const PAGO_RE = /enviad|enviaste|pagast|pago|retir|debit|extracci|transferiste|transferencia a /i;
+const COBRO_RE = /recibid|recibiste|te enviaron|te transfiri|te pag[oó]|cobr|ingres|acredit|deposit|reintegr|devoluci|\bcarga\b|transferencia de\b|prex a prex de\b/i;
+const PAGO_RE = /enviad|enviaste|pagast|pago|retir|debit|extracci|transferiste|transferencia a |prex a prex a /i;
 
 // Fechas escritas como en Mercado Pago: "Hoy", "Ayer", "lunes 5 de octubre", "5 oct".
 const MESES = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
@@ -325,10 +325,37 @@ export function normalizarAstroPay(lines) {
   return out;
 }
 
+// El ícono redondo de la izquierda (Prex) se lee como "-", "=" o "—" en el renglón del monto,
+// pero queda lejos del "$": no es el signo. El "-" de verdad va pegado al "$" ("- $ 50.000,00").
+function sinIconoSuelto(l) {
+  const ws = l.words;
+  if (!ws?.length || !ws.every((w) => w.bbox)) return l;
+  const alto = Math.max(...ws.map((w) => w.bbox.y1 - w.bbox.y0));
+  const fuera = new Set();
+  for (let k = 0; k < ws.length - 1; k += 1) {
+    const t = String(ws[k].text || '').trim();
+    const s = String(ws[k + 1].text || '').trim();
+    const icono = /^[+\-−–—=_~]+$/.test(t) || (k === 0 && /^[^\d$]{1,2}$/.test(t));
+    if (icono && /^\$/.test(s) && ws[k + 1].bbox.x0 - ws[k].bbox.x1 > 3 * alto) fuera.add(k);
+  }
+  if (!fuera.size) return l;
+  const words = ws.filter((_, k) => !fuera.has(k));
+  // La confianza del renglón la bajaba el ícono: se toma la de lo que queda.
+  const confs = words.map((w) => w.confidence).filter((c) => c != null);
+  const confidence = confs.length ? Math.min(...confs) : l.confidence;
+  return { ...l, words, confidence, text: words.map((w) => String(w.text || '').trim()).join(' ') };
+}
+
+// "TRANSFERENCIA CVU/CBU" (Prex): transferencia saliente sin titular.
+const CVU_CBU = /^c\s*v[a-z]{0,2}\s*\/\s*c\s*b\s*u$/i;
+
 // lines: [{ text, bbox:{x0,y0,x1,y1}, words:[{text,bbox}] }] en orden de lectura.
 // fechaDefecto: día a usar si la captura no muestra ninguno (por ejemplo, el del nombre del PDF).
 export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefecto = '' } = {}) {
-  let ls = lines.map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
+  let ls = lines
+    .map((l) => sinIconoSuelto(l))
+    .map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() }))
+    .filter((l) => l.text);
   const astro = normalizarAstroPay(ls);
   if (astro) ls = astro;
   // Columna de texto: donde empiezan los renglones de detalle ("Transferencia recibida 28/09").
@@ -377,7 +404,13 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
         .join(' ');
     } else nombreTxt = l.text.slice(0, m.index);
     nombreTxt = sinEstado(nombreTxt.replace(MONEY, '').replace(/[+\-−–]?\$[\d.,]*$/, '').replace(MONEY_SIN_SIGNO, ''));
-    const { nombre, truncado } = limpiarNombre(nombreTxt);
+    const ln = limpiarNombre(nombreTxt);
+    // Prex: el rendimiento diario de la cuenta no es un movimiento de un cliente.
+    if (/^rendimientos?\b/i.test(ln.nombre)) continue;
+    // Prex: "PREX A PREX DE DAISY": leyenda y titular en el mismo renglón.
+    const pp = ln.nombre.match(/^(prex a prex (?:de|a))\s+(.+)$/i);
+    const { nombre, truncado } = pp ? { nombre: pp[2], truncado: ln.truncado } : ln;
+    const leyendaPrex = pp ? pp[1] : '';
     // Un renglón de leyenda cortado arriba de la captura se lee como basura (confianza baja).
     const cortado = l.confidence != null && l.confidence < 50;
     if (enMedio && (sinTexto(nombre) || cortado)) {
@@ -387,9 +420,13 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       const junto = `${arriba} ${abajo}`.replace(/\s+/g, ' ').trim();
       // "CARGA TRANSFERENCIA DE BRIAN" / "FABRIZIO MOLINA": la leyenda termina en "de"/"a".
       const p = junto.match(/^(.*?\b(?:de|desde|a|para))\s+(.+)$/i);
-      const [ley, quien] = p && (COBRO_RE.test(p[1]) || PAGO_RE.test(p[1])) ? [p[1], p[2]] : [arriba, abajo];
-      if (quien) {
-        const c = limpiarNombre(quien);
+      let [ley, quien] = p && (COBRO_RE.test(p[1]) || PAGO_RE.test(p[1])) ? [p[1], p[2]] : [arriba, abajo];
+      // Prex: "TRANSFERENCIA" / "CVU/CBU" (sale, sin titular) y "CARGA" / "TRANSFERENCIA DE…"
+      // (entra, con el titular cortado por la app): la leyenda sola, sin nombre.
+      const sinTitular = CVU_CBU.test(quien) || /^(.*\b(?:transferencia|prex a prex)\s+(?:de|a))\s*(\.{2,}|…)?$/i.test(junto);
+      if (sinTitular) [ley, quien] = [junto.replace(/\s*(\.{2,}|…)$/, '').replace(/c\s*v[a-z]{0,2}\s*\/\s*c\s*b\s*u$/i, 'CVU/CBU'), ''];
+      if (quien || sinTitular) {
+        const c = sinTitular ? { nombre: '', truncado: /(\.{2,}|…)$/.test(junto) } : limpiarNombre(quien);
         const textoTipo = ley || '';
         const r = tipoMovimiento(m, textoTipo, 'COBRO');
         const { tipo } = r;
@@ -403,7 +440,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
           monto,
           truncado: c.truncado,
           leyenda: leyendaVisible(ley),
-          dudoso: dudoso || !fecha || !c.nombre || (l.confidence != null && l.confidence < 60),
+          dudoso: dudoso || !fecha || (!c.nombre && !sinTitular) || (l.confidence != null && l.confidence < 60),
           imagen,
         });
         continue;
@@ -476,6 +513,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       truncadoFinal = c.truncado;
       textoTipo = nombre;
     }
+    if (leyendaPrex) [leyendaTxt, textoTipo] = [leyendaPrex, leyendaPrex];
     const { tipo, dudoso } = tipoMovimiento(m, textoTipo);
     filas.push({
       fecha,
