@@ -98,6 +98,11 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - **Ualá y capturas en modo oscuro** (letra clara sobre fondo negro, como Ualá o Brubank): la imagen se
   invierte antes de leerla. En Ualá el monto ("+3.100,00", sin "$") queda entre el nombre y "Hoy 13:46":
   se toma la hora, y "Hoy" es el día del nombre del archivo o del título del PDF ("30-10").
+- **AstroPay** ("Transacciones"): montos en formato inglés con "ARS" ("+8,000.00 ARS"), nombres en dos
+  renglones y encabezados "Ayer" / "Hoy". Las transferencias "Fallida" no se cuentan. Si el OCR pierde
+  el signo, decide la flecha (↓ entra, ↑ sale) y la fila queda para revisar; si el monto es ilegible,
+  la fila queda sin monto para completarlo. En los reportes de turno noche ("t.n 30.10"), sacados a la
+  mañana siguiente, "Ayer" es el 30 y "Hoy" el 31.
 - Mercado Pago en la compu ("Actividad"): titular arriba con la hora, y abajo la leyenda, el estado
   ("Aprobado", "Dinero disponible") y el monto. El estado no se toma como parte del nombre.
 - Mercado Pago: lee los encabezados de fecha ("Hoy", "Ayer", "Lunes 5 de octubre"), la hora de cada

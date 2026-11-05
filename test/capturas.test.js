@@ -564,3 +564,34 @@ test('turno "t.m" en el título del PDF', async () => {
   assert.equal(turnoDeTexto('mov uala y brubank 30-10 t.m Joni'), 'Turno 1');
   assert.equal(turnoDeTexto('capturas 30-10 t.t'), 'Turno 2');
 });
+
+test('AstroPay: montos "+8,000.00 ARS", nombre en dos renglones, fallidas y ilegibles', () => {
+  const L = (text, confidence = 90) => ({ text, confidence });
+  const lines = [
+    L('06:00 85M e Za .il'), L('— Transacciones'), L('O, Buscar'), L('EJ Fecha v'),
+    L('Aver'),
+    L('Leonardo Prueba'), L('Y Serrano +10,000.00 ARS'), L('Transferencia CVU'),
+    L('Noelia Inventada Saltiva'), L('y Transferencia CVU +3,000.00 ARS'),
+    L('Yohana Grisel Ejemplo'), L('y Transferencia CVU +O000.00 ARS'),
+    L('OMAR'), L('J ALEJANDRO PRUEBA 30,000.00 ARS'), L('Transferencia CVU'),
+    L('Tomas Ficticio Ulloque'), L('T Transferencia CVU 6,000.00 ARS'),
+    L('Hoy'),
+    L('SILVANA'), L('-15,000-00-ARS'), L('T NOEMI INVENTADA Fallida'), L('Transferencia CVU'),
+    L('Fernando'), L('J Muestra Bustamante +23,300.00 ARS'), L('Transferencia CVU'),
+  ];
+  const filas = parsearCaptura(lines, { hoy: new Date(Date.UTC(2026, 9, 31, 12)) });
+  assert.deepEqual(
+    filas.map((f) => [f.fecha, f.nombre, f.tipo, f.monto, f.dudoso]),
+    [
+      ['30/10/2026', 'Leonardo Prueba Serrano', 'COBRO', 10000, false],
+      ['30/10/2026', 'Noelia Inventada Saltiva', 'COBRO', 3000, false],
+      // Monto ilegible: queda la fila, sin monto y para revisar.
+      ['30/10/2026', 'Yohana Grisel Ejemplo', 'COBRO', 0, true],
+      // Sin signo: la flecha decide (↓ entra, ↑ sale, el OCR la lee "T") y queda para revisar.
+      ['30/10/2026', 'OMAR ALEJANDRO PRUEBA', 'COBRO', 30000, true],
+      ['30/10/2026', 'Tomas Ficticio Ulloque', 'PAGO', 6000, true],
+      // La transferencia fallida no se cuenta.
+      ['31/10/2026', 'Fernando Muestra Bustamante', 'COBRO', 23300, false],
+    ]
+  );
+});

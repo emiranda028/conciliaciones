@@ -127,9 +127,12 @@ function prepararImagen(buf) {
     let img = nativeImage.createFromBuffer(buf);
     const { width } = img.getSize();
     if (!width) return { img: buf, oscura: false };
-    if (width < 1400) img = img.resize({ width: width * 2, quality: 'best' });
+    // Al doble las chicas (celular, ~720 px); las que ya vienen grandes (~1350 px, letra grande)
+    // solo un poco: al doble el OCR confunde 3/5 y 6/0 ("+3,000.00" -> "+5,000.00").
+    const factor = width < 1100 ? 2 : width < 1400 ? 1.5 : 1;
+    if (factor !== 1) img = img.resize({ width: Math.round(width * factor), quality: 'best' });
     const px = img.toBitmap(); // BGRA
-    if (!esOscura(px)) return { img: width < 1400 ? img.toPNG() : buf, oscura: false };
+    if (!esOscura(px)) return { img: factor !== 1 ? img.toPNG() : buf, oscura: false };
     for (let i = 0; i < px.length; i += 4) {
       const v = 255 - (0.114 * px[i] + 0.587 * px[i + 1] + 0.299 * px[i + 2]);
       px[i] = px[i + 1] = px[i + 2] = Math.max(0, Math.min(255, (v - 60) * 1.4));

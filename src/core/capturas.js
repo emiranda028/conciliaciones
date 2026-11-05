@@ -250,10 +250,87 @@ export function fechaDeNombre(texto, hoy = new Date()) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// AstroPay ("Transacciones"): montos en formato inglés con "ARS" ("+8,000.00 ARS"), el nombre a
+// veces en dos renglones y "Transferencia CVU" abajo; las transferencias "Fallida" no cuentan.
+// Se reescribe al formato A ("Nombre +$8.000,00" / "Transferencia CVU").
+// El OCR a veces lee el "+" como "F" y los dígitos como "O" o "U" ("F10,000.00", "+O000.00").
+// También sin signo ("50,000.00 ARS") o con una barra pegada ("+/7,000.00 ARS").
+const MONTO_ARS = /(?:^|\s)([+\-−–F]?)\s*[/|]?\s*([\dOoU][\dOoU.,-]*?)\s*-?ARS\b/;
+// Monto ilegible del todo: después de "Transferencia CVU" queda basura ("FOO RES").
+const MONTO_ROTO = /transferencia cvu\s+(\S.*)$/i;
+const esMontoArs = (t) => MONTO_ARS.test(t) || MONTO_ROTO.test(t);
+
+function aMontoLocal(signo, txt) {
+  // "8,000.00" -> 8000.00 (también tolera "15,000-00" de un monto tachado).
+  const m = txt
+    .replace(/[OoU]/g, '0')
+    .replace(/-/g, '.')
+    .match(/^(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?$/);
+  if (!m || !Number(m[1].replace(/,/g, ''))) return null;
+  const entero = m[1].replace(/,/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${signo === '+' || signo === 'F' ? '+' : '-'}$${entero},${(m[2] || '00').padEnd(2, '0')}`;
+}
+
+export function normalizarAstroPay(lines) {
+  if (lines.filter((l) => esMontoArs(l.text)).length < 2) return null;
+  const out = [];
+  let nombre = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const t = lines[i].text;
+    // Encabezados de fecha ("Ayer" a veces se lee "Aver").
+    if (/^(a[vy]er|hoy)$/i.test(t)) {
+      out.push({ text: /^h/i.test(t) ? 'Hoy' : 'Ayer', confidence: 95 });
+      nombre = [];
+      continue;
+    }
+    if (!esMontoArs(t)) {
+      // La leyenda ("Transferencia CVU", a veces mal leída: "Iransterencia CVU") no es parte del nombre.
+      if (/\bcvu$/i.test(t) && t.split(' ').length <= 3) continue;
+      nombre.push(t);
+      continue;
+    }
+    const roto = !MONTO_ARS.test(t);
+    const m = roto ? { index: t.search(/transferencia cvu/i), 1: '', 2: '' } : t.match(MONTO_ARS);
+    const siguiente = lines[i + 1]?.text || '';
+    // Fallida (monto tachado): no se movió plata.
+    if (/fallid/i.test(t) || /fallid/i.test(siguiente)) {
+      nombre = [];
+      if (/fallid/i.test(siguiente)) i += 1;
+      continue;
+    }
+    // Lo que está a la izquierda del monto: el resto del nombre o la leyenda, sin la flecha del ícono.
+    const izquierda = t
+      .slice(0, m.index)
+      .replace(/transferencia cvu/i, ' ')
+      .split(' ')
+      .filter(Boolean);
+    while (izquierda.length && izquierda[0].length <= 2) izquierda.shift();
+    // Sin signo, la flecha del ícono dice el sentido: ↑ (el OCR la lee "T") sale, ↓ entra.
+    // Igual queda para revisar.
+    const sinSigno = !roto && !m[1];
+    if (sinSigno) m[1] = /^[T↑]\s/.test(t) ? '-' : '+';
+    const monto = roto ? null : aMontoLocal(m[1], m[2]);
+    const conf = sinSigno ? 40 : Math.min(lines[i].confidence ?? 90, 90);
+    const quien = [...nombre, ...izquierda]
+      .join(' ')
+      .split(' ')
+      .filter((x) => /[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/.test(x))
+      .join(' ');
+    if (monto) out.push({ text: `${quien} ${monto}`.trim(), confidence: conf });
+    // Monto ilegible: la fila queda igual, sin monto y para revisar, para no perder el movimiento.
+    else out.push({ text: `${quien} ${m[1] === '-' ? '-' : '+'}$0,00`.trim(), confidence: 0, montoIlegible: true });
+    nombre = [];
+  }
+  return out;
+}
+
 // lines: [{ text, bbox:{x0,y0,x1,y1}, words:[{text,bbox}] }] en orden de lectura.
 // fechaDefecto: día a usar si la captura no muestra ninguno (por ejemplo, el del nombre del PDF).
 export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefecto = '' } = {}) {
-  const ls = lines.map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
+  let ls = lines.map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() })).filter((l) => l.text);
+  const astro = normalizarAstroPay(ls);
+  if (astro) ls = astro;
   // Columna de texto: donde empiezan los renglones de detalle ("Transferencia recibida 28/09").
   const detalleX = ls
     .filter((l) => !buscarMonto(l.text) && !esEncabezadoFecha(l.text) && (FECHA.test(l.text) || HORA_RE.test(l.text)) && l.bbox)
@@ -290,7 +367,7 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     const desdeArriba = Math.max(anteriorMonto, anteriorFecha) + 1;
     anteriorMonto = i;
     const { monto } = m;
-    if (monto == null || monto === 0) continue;
+    if (monto == null || (monto === 0 && !l.montoIlegible)) continue;
     // Nombre: palabras a la izquierda del monto, sin el ícono.
     let nombreTxt;
     if (l.words?.length && colX != null) {

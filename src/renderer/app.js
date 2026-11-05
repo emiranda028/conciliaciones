@@ -492,6 +492,10 @@ async function ocrArchivos(files, cap, progreso) {
         if (fechaDefecto) {
           const [d, m, y] = fechaDefecto.split('/').map(Number);
           hoy = new Date(Date.UTC(y, m - 1, d, 12));
+          // Turno noche ("t.n 30.10"): las capturas se sacan al terminar, a la mañana siguiente,
+          // así que "Ayer" es el 30 y "Hoy" el 31.
+          const tn = state.config.turnos.find((t) => t.nombre === turnoDeNombre(`${pdf?.archivo || files[i].name} ${pdf?.titulo || ''}`));
+          if (tn && tn.desde > tn.hasta) hoy = new Date(hoy.getTime() + 86400000);
         }
         filas = parsearCaptura(lines, { imagen: files[i].name, hoy, fechaDefecto });
         // Captura ancha (Mercado Pago en la compu): se prueba también la lectura por palabras y
