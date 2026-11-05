@@ -630,3 +630,17 @@ test('Prex: ícono leído como "-", titular cortado, CVU/CBU, Prex a Prex y rend
     ]
   );
 });
+
+test('AstroPay: trazos de más en el monto ("+7,/400.00") y monto ilegible sin perder la fila', () => {
+  const L = (text) => ({ text, confidence: 90 });
+  const ls = ['Ayer', 'Transferencia CVU', 'Ana Prueba', '4 Lopez +7,/400.00 ARS', 'Transferencia CVU', 'Luz Ficticia', 'v Gomez +/7/,000.00 ARS', 'Transferencia CVU', 'Eva Inventada', 'y Diaz -7,#400.00 ARS', 'Transferencia CVU'].map(L);
+  const f = parsearCaptura(ls, { hoy: new Date(Date.UTC(2026, 9, 31, 14)) });
+  assert.deepEqual(
+    f.map((x) => [x.tipo, x.monto, x.nombre, !!x.dudoso]),
+    [
+      ['COBRO', 7400, 'Ana Prueba Lopez', false],
+      ['COBRO', 7000, 'Luz Ficticia Gomez', false],
+      ['PAGO', 0, 'Eva Inventada Diaz', true],
+    ]
+  );
+});

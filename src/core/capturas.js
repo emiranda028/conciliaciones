@@ -259,7 +259,9 @@ export function fechaDeNombre(texto, hoy = new Date()) {
 const MONTO_ARS = /(?:^|\s)([+\-−–F]?)\s*[/|]?\s*([\dOoU][\dOoU.,-]*?)\s*-?ARS\b/;
 // Monto ilegible del todo: después de "Transferencia CVU" queda basura ("FOO RES").
 const MONTO_ROTO = /transferencia cvu\s+(\S.*)$/i;
-const esMontoArs = (t) => MONTO_ARS.test(t) || MONTO_ROTO.test(t);
+// O un monto con algún carácter raro antes de "ARS" ("+7,/400.00 ARS").
+const MONTO_RARO = /[+\-−–]?\s*\d[^A-Za-z]*\bARS\s*$/;
+const esMontoArs = (t) => MONTO_ARS.test(t) || MONTO_ROTO.test(t) || MONTO_RARO.test(t);
 
 function aMontoLocal(signo, txt) {
   // "8,000.00" -> 8000.00 (también tolera "15,000-00" de un monto tachado).
@@ -291,7 +293,8 @@ export function normalizarAstroPay(lines) {
       continue;
     }
     const roto = !MONTO_ARS.test(t);
-    const m = roto ? { index: t.search(/transferencia cvu/i), 1: '', 2: '' } : t.match(MONTO_ARS);
+    const idxRoto = /transferencia cvu/i.test(t) ? t.search(/transferencia cvu/i) : t.search(MONTO_RARO);
+    const m = roto ? { index: idxRoto, 1: /^[\-−–]/.test(t.slice(idxRoto)) ? '-' : '', 2: '' } : t.match(MONTO_ARS);
     const siguiente = lines[i + 1]?.text || '';
     // Fallida (monto tachado): no se movió plata.
     if (/fallid/i.test(t) || /fallid/i.test(siguiente)) {
@@ -355,6 +358,8 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
   let ls = lines
     .map((l) => sinIconoSuelto(l))
     .map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() }))
+    // "+7,/400.00", "+/7/,000.00 ARS": trazos de más ("/", "'", "|") en medio del monto.
+    .map((l) => ({ ...l, text: l.text.replace(/(\d[.,])[\/|'`´]+(\d{3}\b)/g, '$1$2').replace(/([+\-−–])([\d\/|'.,]*\d[\d\/|'.,]*)(?=\s*ARS\b)/g, (_, s, n) => s + n.replace(/[\/|']/g, '')) }))
     .filter((l) => l.text);
   const astro = normalizarAstroPay(ls);
   if (astro) ls = astro;
