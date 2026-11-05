@@ -638,8 +638,8 @@ test('AstroPay: trazos de más en el monto ("+7,/400.00") y monto ilegible sin p
   assert.deepEqual(
     f.map((x) => [x.tipo, x.monto, x.nombre, !!x.dudoso]),
     [
-      ['COBRO', 7400, 'Ana Prueba Lopez', false],
-      ['COBRO', 7000, 'Luz Ficticia Gomez', false],
+      ['COBRO', 7400, 'Ana Prueba Lopez', true],
+      ['COBRO', 7000, 'Luz Ficticia Gomez', true],
       ['PAGO', 0, 'Eva Inventada Diaz', true],
     ]
   );

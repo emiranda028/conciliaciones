@@ -65,7 +65,8 @@ function buscarMontoTexto(text) {
     return { signo: m[1], monto: parseNumber(m[2]), index: m.index, dudoso: raro };
   }
   const f = text.match(MONEY_SIN_SIGNO);
-  if (f) return { signo: f[1], monto: parseNumber(f[3].replace(/ (\d{2})$/, ',$1')), index: f.index, dudoso: true };
+  // "80.000,00" sin "$": el 8 es una cifra (un número no empieza con 0), no el "$" mal leído.
+  if (f) return { signo: f[1], monto: parseNumber((f[2] === '8' && /^0/.test(f[3]) ? `8${f[3]}` : f[3]).replace(/ (\d{2})$/, ',$1')), index: f.index, dudoso: true };
   return null;
 }
 
@@ -171,7 +172,7 @@ function sinEstado(t) {
 
 // La leyenda de transferencia ocupa el lugar del titular (el OCR a veces junta las palabras).
 const OMITIDAS_JUNTAS = new Set(LEYENDAS_OMITIDAS.map((x) => normLeyenda(x).replace(/ /g, '')));
-const esLeyendaTransferencia = (s) => {
+export const esLeyendaTransferencia = (s) => {
   const k = normLeyenda(s).replace(/ /g, '');
   // También con alguna letra mal leída ("Iransferencia recibida", "Te envlaron dinero").
   return [...OMITIDAS_JUNTAS].some((o) => k === o || (k.length >= o.length && k.length - o.length <= 3 && distancia(k.slice(-o.length), o) <= 2));
@@ -359,7 +360,11 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     .map((l) => sinIconoSuelto(l))
     .map((l) => ({ ...l, text: String(l.text || '').replace(/\s+/g, ' ').trim() }))
     // "+7,/400.00", "+/7/,000.00 ARS": trazos de más ("/", "'", "|") en medio del monto.
-    .map((l) => ({ ...l, text: l.text.replace(/(\d[.,])[\/|'`´]+(\d{3}\b)/g, '$1$2').replace(/([+\-−–])([\d\/|'.,]*\d[\d\/|'.,]*)(?=\s*ARS\b)/g, (_, s, n) => s + n.replace(/[\/|']/g, '')) }))
+    .map((l) => {
+      const text = l.text.replace(/(\d[.,])[\/|'`´]+(\d{3}\b)/g, '$1$2').replace(/([+\-−–])([\d\/|'.,]*\d[\d\/|'.,]*)(?=\s*ARS\b)/g, (_, s, n) => s + n.replace(/[\/|']/g, ''));
+      // Corregido: puede faltar una cifra ("+7,/600" leído "+/7/,000"), la fila queda para revisar.
+      return text === l.text ? l : { ...l, text, confidence: Math.min(l.confidence ?? 90, 55) };
+    })
     .filter((l) => l.text);
   const astro = normalizarAstroPay(ls);
   if (astro) ls = astro;

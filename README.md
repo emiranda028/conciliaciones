@@ -91,8 +91,11 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   ("CARGA / TRANSFERENCIA DE…"), la fila queda sin nombre y se cruza por monto y turno. El ícono redondo
   de la izquierda, que el OCR a veces lee como "-", no cuenta como signo: el "-" de los pagos va pegado
   al "$". El "RENDIMIENTO ARS" (intereses de la cuenta) no se carga.
-- **AstroPay:** si el OCR mete un trazo de más en el monto ("+7,/400.00 ARS"), se corrige. Si el monto
+- **AstroPay:** si el OCR mete un trazo de más en el monto ("+7,/400.00 ARS"), se corrige y la fila
+  queda para revisar (puede faltar una cifra). Si el monto
   no se puede leer, la fila igual aparece, sin monto y para revisar, en vez de perderse.
+- **Ualá:** un monto sin "$" leído ("80.000,00") ya no se toma como "$0.000,00". Entre las dos lecturas
+  del OCR se elige la que trae nombres de verdad, no "Transferencia recibida" en lugar del titular.
 - **Cobro o pago:** manda el signo del monto ("- $ 95.000,00" es pago, "+ $ 5.000,00" es cobro). Si no
   tiene signo, se decide por la leyenda ("Te enviaron dinero", "CARGA TRANSFERENCIA DE"…). Si el signo y
   la leyenda se contradicen, la fila queda para revisar.

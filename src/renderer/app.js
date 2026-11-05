@@ -19,7 +19,7 @@ import {
   agentesDePaneles,
   DEFAULT_LINEAS,
 } from '../core/session.js';
-import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes } from '../core/capturas.js';
+import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes, esLeyendaTransferencia } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { imagenesDePdf } from '../core/pdf.js';
 import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto, diasDelResultado, consolidadoPorDia, ventanaRango, filtrarResultado, resumen, tiempos } from '../core/report.js';
@@ -466,7 +466,8 @@ async function cargarArchivos(files) {
 
 // Lee con OCR las imágenes y agrega sus movimientos al lote (cap). Devuelve las filas nuevas.
 // Qué tan completa es una lectura: titular, hora y sin dudas.
-const puntajeFilas = (filas) => filas.reduce((s, f) => s + (f.nombre ? 2 : 0) + (f.hora ? 1 : 0) - (f.dudoso ? 1 : 0), 0);
+// Un "nombre" que es la leyenda ("Transferencia recibida") no cuenta como nombre leído.
+const puntajeFilas = (filas) => filas.reduce((s, f) => s + (f.nombre && !esLeyendaTransferencia(f.nombre) ? 2 : 0) + (f.hora ? 1 : 0) - (f.dudoso ? 1 : 0), 0);
 
 async function ocrArchivos(files, cap, progreso) {
   files = [...files].sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }));
