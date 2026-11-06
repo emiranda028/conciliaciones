@@ -149,10 +149,10 @@ ipcMain.handle('ocr:leer', async (_e, data) => {
   const { data: d } = await w.recognize(img, {}, { blocks: true });
   const lines = lineasOcr(d);
   // AstroPay ("+3,000.00 ARS"): según el tamaño el OCR confunde 3/5 y 6/0 o pierde una fila.
-  // Se lee también a otras dos escalas y el monto se decide por mayoría.
+  // Se lee también a otras tres escalas (con 1347 px: 1,25, 1,75 y 2) y el monto se decide por mayoría.
   if (lines.filter((l) => /\bARS\b/.test(l.text)).length >= 2 && factor) {
     const otras = [];
-    for (const esc of [factor * 0.75, factor * 1.5]) {
+    for (const esc of [factor * (5 / 6), factor * (7 / 6), factor * (4 / 3)]) {
       const p = prepararImagen(Buffer.from(data), esc);
       const { data: dx } = await w.recognize(p.img, {}, { blocks: true });
       otras.push(lineasOcr(dx));

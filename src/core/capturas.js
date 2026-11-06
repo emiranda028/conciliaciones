@@ -936,7 +936,10 @@ export function votarLecturas(base, otras) {
     if (montos.length < 2) return f;
     const cuenta = new Map();
     for (const m of montos) if (m) cuenta.set(m, (cuenta.get(m) || 0) + 1);
-    const [ganador, votos] = [...cuenta].sort((a, b) => b[1] - a[1])[0] || [];
+    const orden = [...cuenta].sort((a, b) => b[1] - a[1]);
+    const [ganador, votos] = orden[0] || [];
+    // Empate (2 y 2): no se elige; queda el de la lectura principal, para revisar.
+    if (orden[1] && orden[1][1] === votos) return { ...f, dudoso: true };
     if (votos >= 2 && ganador !== f.monto) return { ...f, monto: ganador, dudoso: true };
     if (!(votos >= 2) && montos.length >= 3) return { ...f, dudoso: true };
     return f;
