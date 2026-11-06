@@ -951,7 +951,9 @@ export function votarLecturas(base, otras) {
     });
     if (montos.length < 2) return f;
     const cuenta = new Map();
-    for (const m of montos) if (m) cuenta.set(m, (cuenta.get(m) || 0) + 1);
+    // "+$3.000" leído "+53.000": un monto igual a otro con un 5 (u 8) adelante es el "$" mal leído.
+    const sinPeso = (m) => montos.find((u) => u && u !== m && /^[58]$/.test(String(m).slice(0, String(m).length - String(u).length)) && String(m).endsWith(String(u))) ?? m;
+    for (const m of montos) if (m) cuenta.set(sinPeso(m), (cuenta.get(sinPeso(m)) || 0) + 1);
     const orden = [...cuenta].sort((a, b) => b[1] - a[1]);
     const [ganador, votos] = orden[0] || [];
     // Empate (2 y 2): no se elige; queda el de la lectura principal, para revisar.

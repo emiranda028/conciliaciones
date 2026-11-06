@@ -149,9 +149,24 @@ ipcMain.handle('ocr:leer', async (_e, data) => {
   const { img, oscura, factor } = prepararImagen(Buffer.from(data));
   const { data: d } = await w.recognize(img, {}, { blocks: true });
   const lines = lineasOcr(d);
-  // AstroPay ("+3,000.00 ARS"): según el tamaño el OCR confunde 3/5 y 6/0 o pierde una fila.
-  // Se lee también a otras tres escalas (con 1347 px: 1,25, 1,75 y 2) y el monto se decide por mayoría.
-  if (lines.filter((l) => /\bARS\b/.test(l.text)).length >= 2 && factor) {
+  // AstroPay ("+3,000.00 ARS") o cualquier lista con un monto leído con poca confianza ("+6$81 5.000,00"
+  // por "+$15.000,00"): según el tamaño el OCR confunde cifras o pierde una fila. Se lee también a
+  // otras tres escalas (con 1347 px: 1,25, 1,75 y 2) y el monto se decide por mayoría.
+  const astro = lines.filter((l) => /\bARS\b/.test(l.text)).length >= 2;
+  const montoDudoso = lines.some((l) => (l.words || []).some((w) => /\$/.test(w.text) && /\d/.test(w.text + '') && (w.confidence ?? 100) < 75));
+  const esComprob = /comprobante|origen y destino|de operaci/i.test(lines.map((l) => l.text).join('\n'));
+  let alto = 0;
+  let anchaImg = false;
+  try {
+    const t = nativeImage.createFromBuffer(Buffer.from(data)).getSize();
+    alto = t.height;
+    anchaImg = t.width > t.height * 1.25;
+  } catch {
+    /* sin tamaño */
+  }
+  // Capturas larguísimas (una lista entera en una imagen): agrandarlas más sería demasiado pesado.
+  // Las anchas y las oscuras (Ualá) ya tienen su segunda lectura por palabras.
+  if ((astro || (montoDudoso && !oscura && !anchaImg)) && !esComprob && factor && alto * factor * 1.34 < 20000) {
     const otras = [];
     for (const esc of [factor * (5 / 6), factor * (7 / 6), factor * (4 / 3)]) {
       const p = prepararImagen(Buffer.from(data), esc);

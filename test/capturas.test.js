@@ -701,3 +701,9 @@ test('varias lecturas de la misma captura: el monto por mayoría y la fila perdi
     ['Ceci Prueba', 5600, false], // mayoría con la principal
   ]);
 });
+
+test('votación: "+$3.000" leído "+53.000" en dos lecturas no le gana al 3.000', () => {
+  const F = (nombre, monto) => ({ fecha: '31/10/2026', hora: '', nombre, tipo: 'COBRO', monto, dudoso: false });
+  const r = votarLecturas([F('German Prueba', 3000)], [[F('German Prueba', 53000)], [F('German Prueba', 5)], [F('German Prueba', 53000)]]);
+  assert.equal(r[0].monto, 3000);
+});

@@ -94,8 +94,10 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
 - **AstroPay:** si el OCR mete un trazo de más en el monto ("+7,/400.00 ARS"), se corrige y la fila
   queda para revisar (puede faltar una cifra). Si el monto
   no se puede leer, la fila igual aparece, sin monto y para revisar, en vez de perderse. Cada captura
-  de AstroPay se lee a cuatro tamaños y el monto se decide por mayoría (el OCR confunde 3/5 y 6/0 según
-  el tamaño); si cambió o no hay mayoría, la fila queda para revisar. Tarda unas cuatro veces más.
+  de AstroPay (y de cualquier billetera donde algún monto se lea con poca confianza, como "+6$81 5.000,00"
+  por "+$15.000,00" en Claro Pay) se lee a cuatro tamaños y el monto se decide por mayoría (el OCR confunde 3/5 y 6/0 según
+  el tamaño, o lee el "$" como un 5: "+53.000" por "+$3.000"); si cambió o no hay mayoría, la fila queda
+  para revisar. Esas páginas tardan unas cuatro veces más.
 - **Ualá:** un monto sin "$" leído ("80.000,00") ya no se toma como "$0.000,00". Entre las dos lecturas
   del OCR se elige la que trae nombres de verdad, no "Transferencia recibida" en lugar del titular.
 - **Cobro o pago:** manda el signo del monto ("- $ 95.000,00" es pago, "+ $ 5.000,00" es cobro). Si no
