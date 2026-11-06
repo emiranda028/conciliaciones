@@ -306,6 +306,8 @@ export function conciliar(panel, billetera, { params = DEFAULT_PARAMS, diccionar
     matches,
     rechazados
   );
+  // 3b2) Varias transferencias iguales del mismo titular y una sola serie igual en el panel.
+  cruzarRepetidos(pLibres(), billetera.filter((r) => r.sinHora && MATCHABLE.has(r.tipo) && !usados.has(r.id)), params, dicc, usados, matches);
   // 3c) Capturas con turno que no encontraron par en su turno: se buscan en todo el día, pero
   // solo si el nombre coincide (el turno pudo estar mal asignado). Quedan para revisar.
   cruzarSinHora(
@@ -521,6 +523,52 @@ function cruzarSinHora(pLibres, wSinHora, params, dicc, usados, matches, rechaza
     m.demora = null;
     m.confianza = x.w.fueraDeTurno || x.rel === 'distinto' ? 'baja' : x.rel === 'conocido' ? 'alta' : x.rel === 'pista' ? 'media' : 'baja';
     matches.push(m);
+  }
+}
+
+// Un titular que manda varias transferencias iguales en el turno (8 de $3.000, todas sin hora) y
+// un solo usuario del panel con esa misma serie de cargas: son la misma persona aunque otro
+// usuario haya cargado una vez ese monto. Se cruzan para revisar.
+function cruzarRepetidos(pLibres, wSinHora, params, dicc, usados, matches) {
+  const grupos = new Map();
+  for (const w of wSinHora) {
+    if (!w.persona || usados.has(w.id)) continue;
+    const k = `${nameKey(w.persona)}|${w.monto}|${w.tipo}|${w.turno || ''}|${Math.floor(w.ts / 86400000)}`;
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(w);
+  }
+  const tol = params.toleranciaRelojMin * MIN;
+  for (const ws of [...grupos.values()].sort((a, b) => b.length - a.length)) {
+    if (ws.length < 3) continue;
+    const w0 = ws[0];
+    const inicio = w0.ts - (((w0.ts % 86400000) + 86400000) % 86400000);
+    const franjas = w0.franjas || [[inicio, inicio + 24 * 60 * MIN]];
+    const porUsuario = new Map();
+    for (const p of pLibres) {
+      if (usados.has(p.id) || p.tipo !== w0.tipo || !p.persona || Math.abs(p.monto - w0.monto) > params.toleranciaMonto) continue;
+      const enTurno = franjas.some(([desde, hasta]) =>
+        p.tipo === 'COBRO' ? p.ts >= desde - tol && p.ts < hasta + params.demoraMaxCobroMin * MIN : p.ts >= desde - params.demoraMaxPagoMin * MIN && p.ts < hasta + tol
+      );
+      if (!enTurno || nameRelation(dicc, p, w0) === 'distinto') continue;
+      const u = norm(p.persona);
+      if (!porUsuario.has(u)) porUsuario.set(u, []);
+      porUsuario.get(u).push(p);
+    }
+    const [primero, segundo] = [...porUsuario.values()].sort((a, b) => b.length - a.length);
+    // La serie del panel tiene que parecerse (puede faltar una captura) y destacarse sola.
+    if (!primero || primero.length < Math.max(3, ws.length - 1)) continue;
+    if (segundo && segundo.length > Math.max(1, Math.floor(ws.length / 3))) continue;
+    const ps = [...primero].sort((a, b) => a.ts - b.ts);
+    const libresW = ws.filter((w) => !usados.has(w.id));
+    const nota = `Captura sin hora, mismo titular repetido (${ws.length} transferencias de $${w0.monto} y ${ps.length} cargas de ${ps[0].persona})`;
+    for (let i = 0; i < Math.min(ps.length, libresW.length); i += 1) {
+      usados.add(ps[i].id);
+      usados.add(libresW[i].id);
+      const m = buildMatch([ps[i]], [libresW[i]], ESTADOS.CONCILIADO, nota);
+      m.demora = null;
+      m.confianza = 'media';
+      matches.push(m);
+    }
   }
 }
 

@@ -644,3 +644,30 @@ test('AstroPay: trazos de más en el monto ("+7,/400.00") y monto ilegible sin p
     ]
   );
 });
+
+test('sin hora: varias transferencias iguales del mismo titular y una sola serie igual en el panel', () => {
+  const dia = parseDateTime('30/10/2026, 00:00:00');
+  const fr = [[dia + 6 * 3600000, dia + 14 * 3600000]];
+  const W = (id, persona, monto) => ({ id, lado: 'billetera', origen: 'UALA', cuenta: 'mov uala', persona, tipo: 'COBRO', monto, ts: dia + 10 * 3600000, sinHora: true, franjas: fr, turno: 'Turno 06 a 14' });
+  const P = (id, persona, h, monto) => ({ id, lado: 'panel', origen: 'BETS', cuenta: 'AGENTE1', persona, ts: parseDateTime(`30/10/2026, ${h}`), tipo: 'COBRO', monto });
+  const horas = ['06:20:14', '06:29:41', '07:25:32', '07:34:03', '07:37:10', '07:56:07', '09:49:20', '09:52:59', '09:59:44'];
+  const panel = [...horas.map((h, i) => P(`p${i}`, 'pochi000', h, 3000)), P('q1', 'otro111', '08:00:00', 3000)];
+  const bill = Array.from({ length: 8 }, (_, i) => W(`w${i}`, 'Prueba, Maria Ficticia', 3000));
+  const r = conciliar(panel, bill);
+  assert.equal(r.matches.length, 8);
+  assert.ok(r.matches.every((m) => m.panel[0].persona === 'pochi000' && m.confianza === 'media' && /mismo titular repetido/.test(m.nota)));
+  // La novena carga de la serie y la del otro usuario quedan pendientes.
+  assert.deepEqual(r.pendientes.filter((p) => p.registro.lado === 'panel').map((p) => p.registro.id).sort(), ['p8', 'q1']);
+
+  // Dos usuarios con la misma serie: no se elige.
+  const panel2 = [...horas.slice(0, 4).map((h, i) => P(`a${i}`, 'uno111', h, 3000)), ...horas.slice(4, 8).map((h, i) => P(`b${i}`, 'dos222', h, 3000))];
+  const r2 = conciliar(panel2, bill.slice(0, 4));
+  assert.equal(r2.matches.length, 0);
+});
+
+test('fecha mal leída sin año ("02/1" por "02/11"): no se toma el 2 de enero', () => {
+  const L = (text) => ({ text, confidence: 90 });
+  const ls = ['Enzo Prueba Montes +$10.000,00', 'Transferencia recibida 02/11', 'Marta Prueba Galvan +$3.000,00', 'Transferencia recibida 02/1'].map(L);
+  const f = parsearCaptura(ls, { hoy: new Date(Date.UTC(2026, 10, 2, 12)) });
+  assert.deepEqual(f.map((x) => x.fecha), ['02/11/2026', '02/11/2026']);
+});

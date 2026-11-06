@@ -142,13 +142,23 @@ function fechaEnTexto(text, hoy) {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
   const f = t.match(FECHA);
-  if (f) return inferirFecha(+f[1], +f[2], f[3], hoy);
+  // Con el año escrito la fecha es confiable; sin año se controla que esté cerca del día de la captura.
+  if (f) return f[3] ? inferirFecha(+f[1], +f[2], f[3], hoy) : razonable(inferirFecha(+f[1], +f[2], f[3], hoy), hoy);
   const ymd = (d) => `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
   if (/\bhoy\b/.test(t)) return ymd(hoy);
   if (/\bayer\b/.test(t)) return ymd(new Date(hoy.getTime() - 86400000));
   const m = t.match(/\b(\d{1,2})\s*(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*\.?(?:\s+(?:de\s+)?(\d{4}))?/);
-  if (m) return inferirFecha(+m[1], MESES[m[2]], m[3], hoy);
+  if (m) return m[3] ? inferirFecha(+m[1], MESES[m[2]], m[3], hoy) : razonable(inferirFecha(+m[1], MESES[m[2]], m[3], hoy), hoy);
   return '';
+}
+
+// Una fecha mal leída ("02/11" leído "02/1", que sería el 2 de enero) queda lejos del día de la
+// captura: se descarta y la fila toma la fecha de la de arriba o la del archivo.
+function razonable(fecha, hoy) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(fecha || '');
+  if (!m) return fecha;
+  const dif = (Date.UTC(+m[3], +m[2] - 1, +m[1]) - hoy.getTime()) / 86400000;
+  return dif < -60 || dif > 3 ? '' : fecha;
 }
 
 // Leyendas habituales de transferencias: no se guardan porque no aportan nada.
