@@ -129,7 +129,8 @@ function prepararImagen(buf, escala) {
     if (!width) return { img: buf, oscura: false };
     // Al doble las chicas (celular, ~720 px); las que ya vienen grandes (~1350 px, letra grande)
     // solo un poco: al doble el OCR confunde 3/5 y 6/0 ("+3,000.00" -> "+5,000.00").
-    const factor = escala ?? (width < 1100 ? 2 : width < 1400 ? 1.5 : 1);
+    // Muy angostas (captura larga achicada, ~350 px): a 4 veces se leen mucho mejor.
+    const factor = escala ?? (width < 600 ? 4 : width < 1100 ? 2 : width < 1400 ? 1.5 : 1);
     if (factor !== 1) img = img.resize({ width: Math.round(width * factor), quality: 'best' });
     const px = img.toBitmap(); // BGRA
     if (!esOscura(px)) return { img: factor !== 1 ? img.toPNG() : buf, oscura: false, factor };

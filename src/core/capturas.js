@@ -379,6 +379,22 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
       // Corregido: puede faltar una cifra ("+7,/600" leído "+/7/,000"), la fila queda para revisar.
       return text === l.text ? l : { ...l, text, confidence: Math.min(l.confidence ?? 90, 55) };
     })
+    // "+$ 10,000" (Personal Pay, sin centavos): la coma con tres cifras detrás es de miles, no de
+    // centavos; si no, se leía $10,00.
+    .map((l) => ({ ...l, text: l.text.replace(/(\$\s*\d{1,3}),(\d{3})(?![\d.,])/g, '$1.$2') }))
+    // "4 Sonia Aline Seguel 30/10/26" debajo de "Transferencia enviada": el "A" leído como 4.
+    .map((l, i, arr) =>
+      i > 0 && /enviad|transferiste/i.test(arr[i - 1].text) && /^[4Á]\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+\s/.test(l.text) && /\d{1,2}\/\d{1,2}/.test(l.text)
+        ? { ...l, text: l.text.replace(/^[4Á]\s+/, 'A ') }
+        : l
+    )
+    // "+5 11.000": el "$" leído como 5 (o S) entre el signo y el monto, separado por un espacio.
+    .map((l) => {
+      const text = l.text.replace(/([+\-−–])\s*[5S§]\s+(\d{1,3}(?:[.,]\d{3})+(?:,\d{2})?)(?![\d])/g, (_, s, n) => `${s}$ ${n.replace(/,(\d{3})/g, '.$1')}`);
+      return text === l.text ? l : { ...l, text, confidence: Math.min(l.confidence ?? 90, 55) };
+    })
+    // "Oe Hector…", "Dz Ariel…", "Os Pedro…": el "De" de Personal Pay mal leído.
+    .map((l) => ({ ...l, text: l.text.replace(/^(?:\S{1,2}\s+)?(?:Oe|Dz|Ds|Des|Os|Oz|D[eo]s?|0e)\s+(?=[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+\s+[A-ZÁÉÍÓÚÑ])/, 'De ') }))
     .filter((l) => l.text);
   const astro = normalizarAstroPay(ls);
   if (astro) ls = astro;
