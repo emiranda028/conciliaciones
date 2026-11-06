@@ -558,7 +558,63 @@ export function parsearCaptura(lines, { hoy = new Date(), imagen = '', fechaDefe
     const vecina = filas.slice(0, k).reverse().find((x) => x.fecha) || filas.slice(k + 1).find((x) => x.fecha);
     if (vecina) Object.assign(f, { fecha: vecina.fecha, dudoso: true });
   });
+  ajustarFechas(filas, hoy, fechaDefecto);
   return filas;
+}
+
+// Cifras que el OCR confunde en las fechas ("30/10" leído "20/10", "02/11/2026" leído "02/1/2026").
+const CIFRAS_PARECIDAS = { 0: '869', 1: '74', 2: '3', 3: '258', 4: '1', 5: '36', 6: '508', 7: '1', 8: '0365', 9: '0' };
+const diaUTC = (s) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || '');
+  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null;
+};
+
+function variantesFecha(fecha) {
+  const [d, m, y] = fecha.split('/');
+  const out = new Set();
+  const cambiar = (s) => {
+    const r = [];
+    for (let i = 0; i < s.length; i += 1) for (const c of CIFRAS_PARECIDAS[s[i]] || '') r.push(s.slice(0, i) + c + s.slice(i + 1));
+    return r;
+  };
+  for (const dd of [d, ...cambiar(d)]) for (const mm of [m, ...cambiar(m), ...(m === '01' ? ['10', '11', '12'] : [])]) out.add(`${dd}/${mm}/${y}`);
+  out.delete(fecha);
+  return [...out].filter((f) => {
+    const [a, b] = f.split('/').map(Number);
+    return a >= 1 && a <= 31 && b >= 1 && b <= 12 && diaUTC(f) != null && new Date(diaUTC(f)).getUTCDate() === a;
+  });
+}
+
+// Cada fila tiene que caer cerca del día del reporte (el del nombre del PDF o del archivo) o, si no
+// lo dice, del día de la captura. Si no, se prueba con las cifras que el OCR suele confundir; si
+// tampoco, toma el día de la fila de arriba (o el del reporte). En los dos casos, para revisar.
+function ajustarFechas(filas, hoy, fechaDefecto) {
+  const ref = diaUTC(fechaDefecto);
+  const hoyDia = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate());
+  // Con el día del reporte: hasta 3 días antes (la lista puede seguir con "29 oct", "28 oct").
+  const [desde, hasta] = ref != null ? [ref - 3 * 86400000, ref + 2 * 86400000] : [hoyDia - 20 * 86400000, hoyDia + 7 * 86400000];
+  const centro = ref != null ? ref : hoyDia;
+  const dentro = (f) => {
+    const t = diaUTC(f);
+    return t != null && t >= desde && t <= hasta;
+  };
+  let anterior = '';
+  for (const f of filas) {
+    if (!f.fecha || dentro(f.fecha)) {
+      if (f.fecha) anterior = f.fecha;
+      continue;
+    }
+    const cand = variantesFecha(f.fecha)
+      .filter(dentro)
+      .sort((a, b) => Math.abs(diaUTC(a) - centro) - Math.abs(diaUTC(b) - centro))[0];
+    // Sin una cifra que la explique: si la fecha es absurda (meses de distancia) se toma la de arriba
+    // o la del reporte; si no, se deja (puede ser un movimiento de otro día) pero para revisar.
+    const absurda = Math.abs(diaUTC(f.fecha) - centro) > 60 * 86400000;
+    const nueva = cand || (absurda ? (anterior && dentro(anterior) ? anterior : ref != null ? fechaDefecto : '') : '');
+    if (nueva) f.fecha = nueva;
+    f.dudoso = true;
+    if (f.fecha) anterior = f.fecha;
+  }
 }
 
 export function claveFila(f) {

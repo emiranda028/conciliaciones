@@ -671,3 +671,19 @@ test('fecha mal leída sin año ("02/1" por "02/11"): no se toma el 2 de enero',
   const f = parsearCaptura(ls, { hoy: new Date(Date.UTC(2026, 10, 2, 12)) });
   assert.deepEqual(f.map((x) => x.fecha), ['02/11/2026', '02/11/2026']);
 });
+
+test('fechas con año mal leídas: se corrigen con el día del reporte o de la captura', () => {
+  const L = (text) => ({ text, confidence: 90 });
+  // "02/11/2026" leído "02/1/2026" (2 de enero), sin día en el nombre: se corrige con el de la captura.
+  const a = parsearCaptura(['Ana Prueba +$3.000,00', 'Transferencia recibida 02/11/2026', 'Beto Prueba +$5.000,00', 'Transferencia recibida 02/1/2026'].map(L), {
+    hoy: new Date(Date.UTC(2026, 10, 2, 12)),
+  });
+  assert.deepEqual(a.map((f) => [f.fecha, !!f.dudoso]), [['02/11/2026', false], ['02/11/2026', true]]);
+  // "30/10/2026" leído "20/10/2026" en el reporte del 30.10.
+  const b = parsearCaptura(['Ana Prueba +$3.000,00', 'Transferencia recibida 20/10/2026', 'Beto Prueba +$5.000,00', 'Transferencia recibida 28/10/2026'].map(L), {
+    hoy: new Date(Date.UTC(2026, 9, 30, 12)),
+    fechaDefecto: '30/10/2026',
+  });
+  // El 28/10 puede ser de verdad (la lista sigue con días anteriores): se deja.
+  assert.deepEqual(b.map((f) => [f.fecha, !!f.dudoso]), [['30/10/2026', true], ['28/10/2026', false]]);
+});

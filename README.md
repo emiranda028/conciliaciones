@@ -136,6 +136,10 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   2 de enero) se descarta, y la fila toma la fecha de la de arriba o la del archivo. Lo mismo con una
   fecha en el nombre del archivo ("v1.1"). Y una fila con un día a más de una semana del de las demás
   filas de la misma captura queda marcada para revisar.
+- Las fechas con año también se controlan contra el día del reporte (el del nombre del PDF o del
+  archivo; si no lo dice, el de la captura). Si no cierran, se prueba con las cifras que el OCR confunde
+  ("02/1/2026" por "02/11/2026", "20/10" por "30/10") y la fila queda para revisar. Los días
+  anteriores que siguen en la lista (hasta 3 días antes del reporte) se dejan como están.
 - Si en el turno hay un solo cobro (o pago) de ese monto de cada lado, se concilia aunque el titular
   no sea el conocido para ese usuario, y queda en "Revisar". Las capturas repetidas (mismo titular y
   monto) cuentan como una sola para decidir si es único. Un usuario que ya pagó desde dos o más
