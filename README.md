@@ -93,7 +93,9 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   al "$". El "RENDIMIENTO ARS" (intereses de la cuenta) no se carga.
 - **AstroPay:** si el OCR mete un trazo de más en el monto ("+7,/400.00 ARS"), se corrige y la fila
   queda para revisar (puede faltar una cifra). Si el monto
-  no se puede leer, la fila igual aparece, sin monto y para revisar, en vez de perderse.
+  no se puede leer, la fila igual aparece, sin monto y para revisar, en vez de perderse. Cada captura
+  de AstroPay se lee a tres tamaños y el monto se decide por mayoría (el OCR confunde 3/5 y 6/0 según
+  el tamaño); si cambió o no hay mayoría, la fila queda para revisar. Tarda unas tres veces más.
 - **Ualá:** un monto sin "$" leído ("80.000,00") ya no se toma como "$0.000,00". Entre las dos lecturas
   del OCR se elige la que trae nombres de verdad, no "Transferencia recibida" en lugar del titular.
 - **Cobro o pago:** manda el signo del monto ("- $ 95.000,00" es pago, "+ $ 5.000,00" es cobro). Si no

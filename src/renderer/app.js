@@ -19,7 +19,7 @@ import {
   agentesDePaneles,
   DEFAULT_LINEAS,
 } from '../core/session.js';
-import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes, esLeyendaTransferencia } from '../core/capturas.js';
+import { parsearCaptura, lineasPorMonto, fechaDeNombre, unirCapturas, filasATabla, esComprobante, parsearComprobante, resolverComprobantes, esLeyendaTransferencia, votarLecturas } from '../core/capturas.js';
 import { readFile, decodeText } from '../core/tabular.js';
 import { imagenesDePdf } from '../core/pdf.js';
 import { exportarExcel, TRAMOS, turnoDe, turnoDeTexto, diasDelResultado, consolidadoPorDia, ventanaRango, filtrarResultado, resumen, tiempos } from '../core/report.js';
@@ -499,6 +499,13 @@ async function ocrArchivos(files, cap, progreso) {
           if (tn && tn.desde > tn.hasta) hoy = new Date(hoy.getTime() + 86400000);
         }
         filas = parsearCaptura(lines, { imagen: files[i].name, hoy, fechaDefecto });
+        // AstroPay: la misma captura leída a otras escalas; el monto se decide por mayoría.
+        if (!Array.isArray(res) && res.otrasEscalas?.length) {
+          filas = votarLecturas(
+            filas,
+            res.otrasEscalas.map((ls) => parsearCaptura(ls, { imagen: files[i].name, hoy, fechaDefecto }))
+          );
+        }
         // Captura ancha (Mercado Pago en la compu): se prueba también la lectura por palabras y
         // se queda con la que dé más movimientos completos.
         if (!Array.isArray(res) && res.palabras?.length) {

@@ -896,3 +896,70 @@ export function lineasPorMonto(lines) {
   });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Varias lecturas de la misma captura (a distintas escalas): el monto de cada fila se decide
+// por mayoría. Una fila que falta en la lectura principal pero aparece igual en las otras dos se
+// agrega. Lo que se cambió o no tiene mayoría queda para revisar.
+const claveNombre = (f) =>
+  String(f.nombre || '')
+    .normalize('NFD')
+    .replace(/[^A-Za-z]/g, '')
+    .toLowerCase()
+    .slice(0, 8);
+const mismaFila = (a, b) => {
+  if (a.tipo !== b.tipo) return false;
+  const [x, y] = [claveNombre(a), claveNombre(b)];
+  if (!x || !y) return !x && !y;
+  const n = Math.min(x.length, y.length, 6);
+  return n >= 4 && x.slice(0, n) === y.slice(0, n);
+};
+
+export function votarLecturas(base, otras) {
+  const usadas = otras.map(() => new Set());
+  // Para cada lectura extra: índice de la fila de la base con la que se emparejó cada una de sus filas.
+  const aBase = otras.map(() => new Map());
+  const res = base.map((f, i) => {
+    const montos = [f.monto];
+    otras.forEach((o, k) => {
+      let mejor = -1;
+      o.forEach((g, j) => {
+        if (usadas[k].has(j) || !mismaFila(f, g)) return;
+        if (mejor < 0 || Math.abs(j - i) < Math.abs(mejor - i)) mejor = j;
+      });
+      if (mejor >= 0) {
+        usadas[k].add(mejor);
+        aBase[k].set(mejor, i);
+        montos.push(o[mejor].monto);
+      }
+    });
+    if (montos.length < 2) return f;
+    const cuenta = new Map();
+    for (const m of montos) if (m) cuenta.set(m, (cuenta.get(m) || 0) + 1);
+    const [ganador, votos] = [...cuenta].sort((a, b) => b[1] - a[1])[0] || [];
+    if (votos >= 2 && ganador !== f.monto) return { ...f, monto: ganador, dudoso: true };
+    if (!(votos >= 2) && montos.length >= 3) return { ...f, dudoso: true };
+    return f;
+  });
+  // Filas que la lectura principal perdió: están en las otras dos lecturas, iguales.
+  if (otras.length >= 2) {
+    const [o1, o2] = otras;
+    const agregadas = [];
+    const usadas2 = new Set();
+    o1.forEach((g, j) => {
+      if (usadas[0].has(j)) return;
+      const j2 = o2.findIndex((h, n) => !usadas[1].has(n) && !usadas2.has(n) && mismaFila(g, h) && g.monto === h.monto && g.monto);
+      if (j2 < 0) return;
+      usadas2.add(j2);
+      // Va después de la fila de la base que corresponde a la anterior en esa lectura.
+      let antes = -1;
+      for (let p = j - 1; p >= 0 && antes < 0; p -= 1) if (aBase[0].has(p)) antes = aBase[0].get(p);
+      // Si al lado ya hay una fila con el mismo monto, es la misma con el nombre mal leído.
+      const vecinas = [base[antes], base[antes + 1]].filter(Boolean);
+      if (vecinas.some((v) => v.tipo === g.tipo && v.monto === g.monto)) return;
+      agregadas.push({ antes, fila: { ...g, dudoso: true } });
+    });
+    for (const a of agregadas.reverse()) res.splice(a.antes + 1, 0, a.fila);
+  }
+  return res;
+}

@@ -122,22 +122,22 @@ function esOscura(px) {
   return n > 0 && suma / n < 110;
 }
 
-function prepararImagen(buf) {
+function prepararImagen(buf, escala) {
   try {
     let img = nativeImage.createFromBuffer(buf);
     const { width } = img.getSize();
     if (!width) return { img: buf, oscura: false };
     // Al doble las chicas (celular, ~720 px); las que ya vienen grandes (~1350 px, letra grande)
     // solo un poco: al doble el OCR confunde 3/5 y 6/0 ("+3,000.00" -> "+5,000.00").
-    const factor = width < 1100 ? 2 : width < 1400 ? 1.5 : 1;
+    const factor = escala ?? (width < 1100 ? 2 : width < 1400 ? 1.5 : 1);
     if (factor !== 1) img = img.resize({ width: Math.round(width * factor), quality: 'best' });
     const px = img.toBitmap(); // BGRA
-    if (!esOscura(px)) return { img: factor !== 1 ? img.toPNG() : buf, oscura: false };
+    if (!esOscura(px)) return { img: factor !== 1 ? img.toPNG() : buf, oscura: false, factor };
     for (let i = 0; i < px.length; i += 4) {
       const v = 255 - (0.114 * px[i] + 0.587 * px[i + 1] + 0.299 * px[i + 2]);
       px[i] = px[i + 1] = px[i + 2] = Math.max(0, Math.min(255, (v - 60) * 1.4));
     }
-    return { img: nativeImage.createFromBitmap(px, img.getSize()).toPNG(), oscura: true };
+    return { img: nativeImage.createFromBitmap(px, img.getSize()).toPNG(), oscura: true, factor };
   } catch {
     return { img: buf, oscura: false };
   }
@@ -145,9 +145,20 @@ function prepararImagen(buf) {
 
 ipcMain.handle('ocr:leer', async (_e, data) => {
   const w = await getOcr();
-  const { img, oscura } = prepararImagen(Buffer.from(data));
+  const { img, oscura, factor } = prepararImagen(Buffer.from(data));
   const { data: d } = await w.recognize(img, {}, { blocks: true });
   const lines = lineasOcr(d);
+  // AstroPay ("+3,000.00 ARS"): según el tamaño el OCR confunde 3/5 y 6/0 o pierde una fila.
+  // Se lee también a otras dos escalas y el monto se decide por mayoría.
+  if (lines.filter((l) => /\bARS\b/.test(l.text)).length >= 2 && factor) {
+    const otras = [];
+    for (const esc of [factor * 0.75, factor * 1.5]) {
+      const p = prepararImagen(Buffer.from(data), esc);
+      const { data: dx } = await w.recognize(p.img, {}, { blocks: true });
+      otras.push(lineasOcr(dx));
+    }
+    return { lines, otrasEscalas: otras };
+  }
   // Comprobantes (un movimiento por imagen, letra grande): una segunda lectura con
   // segmentación automática encuentra el monto que la lectura por bloque a veces saltea.
   const texto = lines.map((l) => l.text).join('\n');

@@ -1,7 +1,7 @@
 // Capturas de pantalla (OCR), cruce sin hora y GANEMOS en tabla. Datos inventados.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsearCaptura, unirCapturas, filasATabla, inferirFecha } from '../src/core/capturas.js';
+import { parsearCaptura, unirCapturas, filasATabla, inferirFecha, votarLecturas } from '../src/core/capturas.js';
 import { conciliar, ESTADOS } from '../src/core/matcher.js';
 import { tableToFuente, mergeConfig } from '../src/core/session.js';
 import { detect } from '../src/core/importers.js';
@@ -686,4 +686,18 @@ test('fechas con año mal leídas: se corrigen con el día del reporte o de la c
   });
   // El 28/10 puede ser de verdad (la lista sigue con días anteriores): se deja.
   assert.deepEqual(b.map((f) => [f.fecha, !!f.dudoso]), [['30/10/2026', true], ['28/10/2026', false]]);
+});
+
+test('varias lecturas de la misma captura: el monto por mayoría y la fila perdida se agrega', () => {
+  const F = (nombre, monto, tipo = 'COBRO') => ({ fecha: '31/10/2026', hora: '', nombre, tipo, monto, dudoso: false });
+  const base = [F('Ana Prueba', 5000), F('Beto Prueba', 10000), F('Ceci Prueba', 5600)];
+  const otra1 = [F('Ana Prueba', 3000), F('Beto Prueba', 10000), F('Dora Ficticia', 3000), F('Ceci Prueba', 3600)];
+  const otra2 = [F('Ana Pruebe', 3000), F('Beto Prueba', 10000), F('Dora Ficticia', 3000), F('Ceci Prueba', 5600)];
+  const r = votarLecturas(base, [otra1, otra2]);
+  assert.deepEqual(r.map((f) => [f.nombre, f.monto, f.dudoso]), [
+    ['Ana Prueba', 3000, true], // 5000 en una lectura, 3000 en dos
+    ['Beto Prueba', 10000, false],
+    ['Dora Ficticia', 3000, true], // la lectura principal la perdió
+    ['Ceci Prueba', 5600, false], // mayoría con la principal
+  ]);
 });
