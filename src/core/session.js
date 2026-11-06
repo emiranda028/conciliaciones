@@ -4,6 +4,7 @@ import { readFile, parsePasted } from './tabular.js';
 import { detect, importerByKey, parseGeneric, assignIds, IMPORTERS, LADO } from './importers.js';
 import { conciliar, DEFAULT_PARAMS, nameKey } from './matcher.js';
 import { resumen, tiempos, filtrarResultado, ventanaDia, diaSugerido, DEFAULT_TURNOS, TURNOS_ANTERIORES, franjasTurno } from './report.js';
+import { diagnosticar } from './diagnostico.js';
 import { norm, cleanText, dayFromIso, isoDay, uid } from './util.js';
 
 export const DEFAULT_CONFIG = {
@@ -229,6 +230,7 @@ export function ejecutar({ fuentes, config, manual, dia, linea, agentes: elegido
   let { panel } = ds;
   // Línea o agentes elegidos: solo los movimientos de panel de esos agentes.
   const excluidosLinea = {};
+  const excluidos = [];
   const l = elegidos ? null : linea ? (config.lineas || []).find((x) => x.nombre === linea) : null;
   const lista = elegidos || l?.agentes;
   if (lista) {
@@ -237,10 +239,17 @@ export function ejecutar({ fuentes, config, manual, dia, linea, agentes: elegido
       if (agentes.has(norm(r.cuenta))) return true;
       const k = r.cuenta || '(sin agente)';
       excluidosLinea[k] = (excluidosLinea[k] || 0) + 1;
+      excluidos.push(r);
       return false;
     });
   }
   const res = conciliar(panel, billetera, { params: config.params, diccionario: config.diccionario, manual });
+  // Motivo probable de cada pendiente (falta una billetera, otro agente, un par posible...).
+  const diag = diagnosticar(res, { panel, billetera, excluidos, params: config.params });
+  for (const p of res.pendientes) {
+    const d = diag.get(p.registro.id);
+    if (d) Object.assign(p, { motivo: d.motivo, motivoDetalle: d.detalle });
+  }
   const dayMs = dayFromIso(dia);
   const ventana = dayMs == null ? null : ventanaDia(dayMs, config.horaInicioDia);
   const vista = filtrarResultado(res, ventana);

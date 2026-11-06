@@ -758,6 +758,41 @@ function viewResumen() {
       <td class="num">${o.nCobros}</td><td class="num">${money(o.cobros)}</td><td class="num">${o.nPagos}</td><td class="num">${money(o.pagos)}</td><td class="num">${money(o.neto)}</td></tr>`
     )
     .join('');
+  // Por qué quedan pendientes: lo que falta cargar y lo que conviene revisar a mano.
+  const AYUDA_MOTIVO = {
+    'Falta billetera en ese horario': 'Ninguna billetera cargada cubre esa hora: falta el reporte o las capturas de ese turno.',
+    'Sin panel en ese horario': 'No hay movimientos de panel cargados a esa hora.',
+    'Puede ser de otro agente': 'Hay un movimiento igual de otro agente (fuera del filtro de línea o agente).',
+    'Posible par (revisar a mano)': 'Hay un movimiento del otro lado con el mismo monto que no se unió solo (orden, demora o más de un candidato).',
+    'Sin movimiento con ese monto': 'Hay datos de ese horario pero ninguno con ese monto: puede faltar una billetera, una captura, o el monto se leyó mal.',
+  };
+  const motivos = new Map();
+  for (const p of state.run.vista.pendientes) {
+    if (!p.motivo) continue;
+    const m = motivos.get(p.motivo) || { panel: 0, billetera: 0, monto: 0 };
+    m[p.registro.lado === 'panel' ? 'panel' : 'billetera'] += 1;
+    m.monto += p.registro.monto;
+    motivos.set(p.motivo, m);
+  }
+  const motivoRows = Object.keys(AYUDA_MOTIVO)
+    .filter((k) => motivos.has(k))
+    .map((k) => {
+      const m = motivos.get(k);
+      return `<tr><td><b>${esc(k)}</b><div class="muted small">${esc(AYUDA_MOTIVO[k])}</div></td><td class="num">${m.panel}</td><td class="num">${m.billetera}</td><td class="num">${money(m.monto)}</td></tr>`;
+    })
+    .join('');
+  // Fuentes cargadas que no tienen ningún movimiento en el día elegido.
+  if (state.run.ventana) {
+    const { from, to } = state.run.ventana;
+    const fuera = state.fuentes.filter((f) => f.activa && f.records?.length && !f.records.some((x) => x.ts >= from && x.ts < to));
+    if (fuera.length)
+      avisos.push(
+        `${fuera.length} fuente(s) cargada(s) no tienen movimientos en este día operativo (son de otros días): ${fuera
+          .slice(0, 6)
+          .map((f) => f.nombre)
+          .join(', ')}${fuera.length > 6 ? '…' : ''}.`
+      );
+  }
   const tc = state.run.tiempos.COBRO.general;
   const tp = state.run.tiempos.PAGO.general;
   return `
@@ -776,6 +811,13 @@ function viewResumen() {
       <div class="card"><h2>Partidas por estado</h2>
         <table class="tbl"><thead><tr><th>Estado</th><th class="num">Cant.</th><th class="num">Panel</th><th class="num">Billeteras</th></tr></thead><tbody>${estadoRows}</tbody></table>
         <p class="muted small">Montos con signo: cobros positivos, pagos negativos.</p></div>
+      ${
+        motivoRows
+          ? `<div class="card"><h2>¿Por qué quedan pendientes?</h2>
+        <table class="tbl"><thead><tr><th>Motivo probable</th><th class="num">Panel</th><th class="num">Billeteras</th><th class="num">Monto</th></tr></thead><tbody>${motivoRows}</tbody></table>
+        <p class="muted small">El detalle de cada uno está en Pendientes y en el Excel.</p></div>`
+          : ''
+      }
       <div class="card xscroll"><h2>Por panel y cuenta</h2>
         <table class="tbl"><thead><tr><th>Lado</th><th>Origen</th><th>Agente / cuenta</th><th class="num">Cobros</th><th class="num">$</th><th class="num">Pagos</th><th class="num">$</th><th class="num">Neto</th></tr></thead><tbody>${origenRows}</tbody></table>
         ${r.panel.bonos ? `<p class="muted small">Bonificaciones cargadas en panel (sin dinero): ${money(r.panel.bonos)}</p>` : ''}
@@ -895,7 +937,7 @@ function filtrarPend() {
     const r = p.registro;
     if (!f.info && INFORMATIVOS.has(p.estado) && !state.sel.has(r.id)) return false;
     if (f.tipo && r.tipo !== f.tipo) return false;
-    if (q && !`${r.persona} ${r.cuenta} ${r.monto} ${r.ref} ${p.estado}`.toLowerCase().includes(q)) return false;
+    if (q && !`${r.persona} ${r.cuenta} ${r.monto} ${r.ref} ${p.estado} ${p.motivo || ''}`.toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -912,7 +954,7 @@ function pendTable(list, lado, hints) {
         <td>${tipoTxt(r.tipo)}</td>
         <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}${r.sinHora && r.turno ? ` · ${esc(r.turno)}` : ''}${r.sinHora && r.detalle ? ` · <b>${esc(r.detalle)}</b>` : ''}</div></td>
         <td class="num">${money(signed(r))}</td>
-        <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}
+        <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}${p.motivo ? `<div class="small" title="${esc(p.motivoDetalle || '')}"><b>${esc(p.motivo)}</b><div class="muted">${esc(p.motivoDetalle || '')}</div></div>` : ''}
           ${man ? `<div><button class="link small" data-quitar-estado="${esc(r.id)}">Quitar marca</button></div>` : ''}</td>
       </tr>`;
     })

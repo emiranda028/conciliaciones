@@ -166,6 +166,22 @@ Cada cambio que se sube a `main` genera el `.exe` en una máquina Windows de Git
 app, concilia datos de ejemplo y verifica que la red esté bloqueada) y lo publica en
 [Releases](https://github.com/emiranda028/conciliaciones/releases). Si el build falla, no se publica.
 
+## Por qué quedan pendientes
+
+Cada pendiente trae un **motivo probable**, en Pendientes, en el Excel y resumido en Resumen:
+
+- **Falta billetera en ese horario:** ninguna billetera cargada cubre esa hora (por cuenta y por día,
+  del primer al último movimiento, o el turno de las capturas). Falta el reporte o las capturas.
+- **Sin panel en ese horario:** el dinero entró a una hora sin movimientos de panel cargados.
+- **Puede ser de otro agente:** hay un movimiento igual de un agente que quedó afuera del filtro de
+  línea o agente (dice cuál, con usuario y hora).
+- **Posible par (revisar a mano):** hay un movimiento del otro lado con el mismo monto que no se unió
+  solo, y dice por qué: la plata figura después de la carga, demasiada demora, o más de un candidato.
+- **Sin movimiento con ese monto:** hay datos de ese horario pero ninguno con ese monto. Puede faltar
+  una billetera o una captura, o el monto se leyó mal.
+
+Además, Resumen avisa qué fuentes cargadas no tienen ningún movimiento en el día operativo elegido.
+
 ## Uso
 
 1. Copiar `ConciliadorFichas.exe` al pendrive y abrirlo con doble clic.

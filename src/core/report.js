@@ -352,6 +352,19 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
     const row = ws.addRow([e.estado, e.cantidad, e.montoPanel, e.montoBilletera]);
     [3, 4].forEach((c) => (row.getCell(c).numFmt = '#,##0.00'));
   }
+  // Por qué quedan pendientes (motivo probable de cada uno).
+  const motivos = new Map();
+  for (const p of res.pendientes) {
+    if (!p.motivo) continue;
+    const m = motivos.get(p.motivo) || [0, 0];
+    m[p.registro.lado === 'panel' ? 0 : 1] += 1;
+    motivos.set(p.motivo, m);
+  }
+  if (motivos.size) {
+    ws.addRow([]);
+    ws.addRow(['¿Por qué quedan pendientes? (motivo probable)', 'Panel', 'Billeteras']).font = { bold: true };
+    for (const [m, [a, b]] of motivos) ws.addRow([m, a, b]);
+  }
   ws.addRow([]);
   ws.addRow(['Demoras', 'Promedio', 'Mediana', 'Máximo']).font = { bold: true };
   for (const [tipo, txt] of [
@@ -456,6 +469,8 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
             ? { pFechaHora: fechaExcel(r), pFechaHoraSinHora: !!r.sinHora, pCuenta: r.cuenta, pPersona: r.persona, montoPanel: monto }
             : { wFechaHora: fechaExcel(r), wFechaHoraSinHora: !!r.sinHora, wCuenta: r.cuenta, wPersona: r.persona, montoBilletera: monto }),
           nota: [p.nota, r.detalle].filter(Boolean).join(' · '),
+          motivo: p.motivo || '',
+          motivoDetalle: p.motivoDetalle || '',
         },
       };
     }),
@@ -481,6 +496,8 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
       { h: 'Diferencia', k: 'diferencia', w: 12, money: true },
       { h: 'Demora', k: 'demora', w: 12 },
       { h: 'Nota', k: 'nota', w: 34 },
+      { h: 'Motivo probable', k: 'motivo', w: 28 },
+      { h: 'Detalle del motivo', k: 'motivoDetalle', w: 60 },
     ],
     todo.map((x) => ({ dia: diaCelda(x.ts), ...x.fila }))
   );
@@ -547,8 +564,8 @@ export async function exportarExcel({ res, resumenData, tiemposData, panel, bill
   addSheet(
     wb,
     'Pendientes de conciliar',
-    [...colDia, { h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }],
-    [...res.pendientes].sort((a, b) => a.registro.ts - b.registro.ts).map((p) => ({ dia: diaCelda(p.registro.ts), estado: p.estado, lado: p.registro.lado, nota: p.nota, ...recRow(p.registro, turnos) }))
+    [...colDia, { h: 'Estado', k: 'estado', w: 28 }, { h: 'Lado', k: 'lado', w: 10 }, { h: 'Turno', k: 'turno', w: 14 }, ...recCols(), { h: 'Detalle', k: 'detalle', w: 24 }, { h: 'Nota', k: 'nota', w: 30 }, { h: 'Motivo probable', k: 'motivo', w: 28 }, { h: 'Detalle del motivo', k: 'motivoDetalle', w: 60 }],
+    [...res.pendientes].sort((a, b) => a.registro.ts - b.registro.ts).map((p) => ({ dia: diaCelda(p.registro.ts), estado: p.estado, lado: p.registro.lado, nota: p.nota, motivo: p.motivo || '', motivoDetalle: p.motivoDetalle || '', ...recRow(p.registro, turnos) }))
   );
 
   // Tiempos
