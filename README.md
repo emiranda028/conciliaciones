@@ -133,7 +133,9 @@ de "Mis movimientos" junto con los demás archivos, o usar los botones de la tar
   juntas con confianza media, aunque otro usuario haya cargado una vez ese monto. Las cargas que sobran
   quedan pendientes.
 - Una fecha sin año que no puede ser la de la captura ("02/1" leído en lugar de "02/11", que daría el
-  2 de enero) se descarta, y la fila toma la fecha de la de arriba o la del archivo.
+  2 de enero) se descarta, y la fila toma la fecha de la de arriba o la del archivo. Lo mismo con una
+  fecha en el nombre del archivo ("v1.1"). Y una fila con un día a más de una semana del de las demás
+  filas de la misma captura queda marcada para revisar.
 - Si en el turno hay un solo cobro (o pago) de ese monto de cada lado, se concilia aunque el titular
   no sea el conocido para ese usuario, y queda en "Revisar". Las capturas repetidas (mismo titular y
   monto) cuentan como una sola para decidir si es único. Un usuario que ya pagó desde dos o más

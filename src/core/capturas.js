@@ -243,7 +243,11 @@ function limpiarNombre(txt) {
 export function fechaDeNombre(texto, hoy = new Date()) {
   const t = String(texto || '');
   const m = t.match(/(?<![\d])(\d{1,2})[-./_](\d{1,2})(?:[-./_](\d{4}|\d{2}))?(?![\d])/);
-  if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12) return inferirFecha(+m[1], +m[2], m[3], hoy);
+  // Sin año, una fecha que no puede ser la del archivo ("v1.1", "(1.2)") no se toma: daría enero.
+  if (m && +m[1] >= 1 && +m[1] <= 31 && +m[2] >= 1 && +m[2] <= 12) {
+    const f = inferirFecha(+m[1], +m[2], m[3], hoy);
+    if (m[3] || razonable(f, hoy)) return f;
+  }
   const d = t.match(/(?<![A-Za-z])d[ií]a[\s_-]*(\d{1,2})(?!\d)/i);
   if (d && +d[1] >= 1 && +d[1] <= 31) {
     // Mes de la fecha de referencia, o el anterior si ese día todavía no llegó.

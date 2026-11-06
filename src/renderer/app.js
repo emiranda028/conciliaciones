@@ -507,6 +507,14 @@ async function ocrArchivos(files, cap, progreso) {
         }
       }
       if (!filas.length) cap.errores.push(`${files[i].name}: no se encontraron movimientos.`);
+      // Una fila con un día muy lejos del de las demás de la misma captura (fecha mal leída): para revisar.
+      const diaDe = (f) => {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(f.fecha || '');
+        return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null;
+      };
+      const dias = filas.map(diaDe).filter((d) => d != null).sort((a, b) => a - b);
+      const mediana = dias[Math.floor(dias.length / 2)];
+      for (const f of filas) if (diaDe(f) != null && Math.abs(diaDe(f) - mediana) > 7 * 86400000) f.dudoso = true;
       // Las capturas sin hora toman el turno del nombre del archivo (TM, TT, TN…) o el elegido para el lote.
       const turno = turnoDeNombre(`${files[i].pdf?.archivo || files[i].name} ${files[i].pdf?.titulo || ''}`) || cap.turnoTodas;
       for (const f of filas) {
