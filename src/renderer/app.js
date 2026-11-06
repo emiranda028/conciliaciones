@@ -51,6 +51,7 @@ const state = {
   fuentes: [],
   manual: { forzados: [], estados: {}, rechazados: [] },
   dia: '',
+  diaHasta: '', // vacío: solo el día elegido; con fecha: rango de días operativos
   // Agentes del panel elegidos a mano (null: los de la línea elegida, o todos).
   agentesSel: null,
   run: null,
@@ -183,7 +184,7 @@ function recompute() {
     state.run = null;
     return;
   }
-  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia, linea: state.config.lineaActiva, agentes: state.agentesSel });
+  state.run = ejecutar({ fuentes: state.fuentes, config: state.config, manual: state.manual, dia: state.dia, diaHasta: state.diaHasta, linea: state.config.lineaActiva, agentes: state.agentesSel });
   const antes = JSON.stringify(state.config.diccionario);
   state.config.diccionario = unirDiccionario(state.config.diccionario, state.run.diccionarioAprendido);
   if (JSON.stringify(state.config.diccionario) !== antes) saveConfigSoon();
@@ -218,7 +219,9 @@ function render() {
   const view = VIEWS.find((v) => v.key === state.view);
   $('#view-title').textContent = view.label;
   $('#view-sub').innerHTML = run?.ventana
-    ? `Día operativo ${esc(fmtDateTime(run.ventana.from))} a ${esc(fmtDateTime(run.ventana.to))}`
+    ? run.ventana.to - run.ventana.from > 86400000
+      ? `Días operativos del ${esc(fmtDate(run.ventana.from))} al ${esc(fmtDate(run.ventana.to - 86400000))} (${Math.round((run.ventana.to - run.ventana.from) / 86400000)} días, de ${esc(fmtDateTime(run.ventana.from))} a ${esc(fmtDateTime(run.ventana.to))})`
+      : `Día operativo ${esc(fmtDateTime(run.ventana.from))} a ${esc(fmtDateTime(run.ventana.to))}`
     : run
       ? 'Sin filtro de día'
       : '';
@@ -269,6 +272,7 @@ function agenteIncluido(a) {
 function diaSelectorHtml() {
   return `<label class="row small muted">Línea ${lineaSelectHtml('linea')}</label><label class="row small muted" title="El día operativo va de las ${state.config.horaInicioDia}:00 hasta las ${state.config.horaInicioDia}:00 del día siguiente">
     Día operativo <input type="date" id="dia" value="${esc(state.dia)}" />
+    <span title="Opcional: para ver varios días juntos">hasta</span> <input type="date" id="dia-hasta" value="${esc(state.diaHasta)}" ${state.dia ? `min="${esc(state.dia)}"` : 'disabled'} />
     <button class="btn sm" data-act="dia-todo" ${state.dia ? '' : 'disabled'}>Ver todo</button></label>`;
 }
 
@@ -1412,7 +1416,10 @@ function exportar() {
   const ultimo = isoDay(dias[dias.length - 1]);
   const porDia = new Map(consolidadoPorDia(run.completo, h).map((d) => [d.dia, d]));
   const diaDef = state.dia && dias.includes(dayFromIso(state.dia)) ? state.dia : ultimo;
-  const modoDef = state.dia || dias.length === 1 ? 'dia' : 'todo';
+  const enRango = state.dia && state.diaHasta && state.diaHasta !== state.dia;
+  const modoDef = enRango ? 'rango' : state.dia || dias.length === 1 ? 'dia' : 'todo';
+  const desdeDef = enRango ? [state.dia, state.diaHasta].sort()[0] : primero;
+  const hastaDef = enRango ? [state.dia, state.diaHasta].sort()[1] : ultimo;
   const lista = dias
     .map((d) => {
       const x = porDia.get(d);
@@ -1426,9 +1433,9 @@ function exportar() {
         <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="dia" ${modoDef === 'dia' ? 'checked' : ''} /> Un día</label>
         <label class="field"><span>Día operativo</span><input type="date" id="exp-dia" value="${esc(diaDef)}" min="${primero}" max="${ultimo}" /></label>
         <span></span>
-        <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="rango" /> Rango de días</label>
-        <label class="field"><span>Desde</span><input type="date" id="exp-desde" value="${primero}" min="${primero}" max="${ultimo}" /></label>
-        <label class="field"><span>Hasta</span><input type="date" id="exp-hasta" value="${ultimo}" min="${primero}" max="${ultimo}" /></label>
+        <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="rango" ${modoDef === 'rango' ? 'checked' : ''} /> Rango de días</label>
+        <label class="field"><span>Desde</span><input type="date" id="exp-desde" value="${desdeDef}" min="${primero}" max="${ultimo}" /></label>
+        <label class="field"><span>Hasta</span><input type="date" id="exp-hasta" value="${hastaDef}" min="${primero}" max="${ultimo}" /></label>
         <label class="row" style="padding-bottom:8px"><input type="radio" name="exp-modo" value="todo" ${modoDef === 'todo' ? 'checked' : ''} /> Todo lo cargado</label>
       </div>
       <label class="row small" style="margin-top:12px"><input type="checkbox" id="exp-pordia" checked /> Consolidado: agregar la hoja "Por día" (un renglón por día con avance, pendientes y montos) y la columna "Día operativo" en el detalle</label>
@@ -1493,7 +1500,7 @@ async function exportarPeriodo({ desde, hasta, todo, consolidado }) {
 }
 
 async function guardarTrabajo() {
-  const txt = serializarTrabajo({ fuentes: state.fuentes, manual: state.manual, dia: state.dia });
+  const txt = serializarTrabajo({ fuentes: state.fuentes, manual: state.manual, dia: state.dia, diaHasta: state.diaHasta });
   const p = await api.saveFile(`Trabajo_${state.dia || isoDay(Date.now())}.conciliacion`, new TextEncoder().encode(txt), [
     { name: 'Trabajo de conciliación', extensions: ['conciliacion'] },
   ]);
@@ -1508,6 +1515,7 @@ async function abrirTrabajo() {
     state.fuentes = t.fuentes;
     state.manual = t.manual;
     state.dia = t.dia;
+    state.diaHasta = t.diaHasta || '';
     state.sel.clear();
     state.view = 'resumen';
     toast('Trabajo abierto.');
@@ -1551,6 +1559,7 @@ document.addEventListener('click', async (e) => {
     else if (d.act === 'abrir-trabajo') await abrirTrabajo();
     else if (d.act === 'dia-todo') {
       state.dia = '';
+      state.diaHasta = '';
       refresh();
     } else if (d.act === 'pegar') {
       const txt = $('#paste-txt').value;
@@ -1567,6 +1576,7 @@ document.addEventListener('click', async (e) => {
       state.manual = { forzados: [], estados: {}, rechazados: [] };
       state.sel.clear();
       state.dia = '';
+      state.diaHasta = '';
       refresh();
     } else if (d.fuenteVer) verFuente(state.fuentes.find((f) => f.id === d.fuenteVer));
     else if (d.fuenteQuitar) {
@@ -1679,6 +1689,9 @@ document.addEventListener('change', (e) => {
     state.agentesSel = null;
     state.config.lineaActiva = t.value;
     saveConfigSoon();
+    refresh();
+  } else if (t.id === 'dia-hasta') {
+    state.diaHasta = t.value;
     refresh();
   } else if (t.id === 'dia' || t.id === 'dia-cargar') {
     state.dia = t.value;

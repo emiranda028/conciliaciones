@@ -188,7 +188,9 @@ Además, Resumen avisa qué fuentes cargadas no tienen ningún movimiento en el 
 2. En **Cargar reportes**, arrastrar los archivos del día o pegar lo copiado del panel.
 3. Revisar que cada archivo se haya reconocido con el formato correcto (se puede cambiar en la lista) y apretar **Conciliar**.
 4. Revisar **Pendientes** y las partidas marcadas como "Revisar" en **Conciliadas**.
-5. Hacer clic en **Exportar a Excel** y elegir qué exportar:
+5. Para ver varios días juntos, completar "hasta" al lado del día operativo: el resumen, las conciliadas
+   y los pendientes pasan a ser de todo el rango ("Ver todo" vuelve a todo lo cargado).
+6. Hacer clic en **Exportar a Excel** y elegir qué exportar (si hay un rango elegido, viene marcado):
    - **Un día**: un día operativo (de las 6:00 a las 6:00 del día siguiente).
    - **Rango de días**: desde un día hasta otro, ambos incluidos.
    - **Todo lo cargado**: todos los días que se subieron.

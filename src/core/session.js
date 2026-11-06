@@ -3,7 +3,7 @@
 import { readFile, parsePasted } from './tabular.js';
 import { detect, importerByKey, parseGeneric, assignIds, IMPORTERS, LADO } from './importers.js';
 import { conciliar, DEFAULT_PARAMS, nameKey } from './matcher.js';
-import { resumen, tiempos, filtrarResultado, ventanaDia, diaSugerido, DEFAULT_TURNOS, TURNOS_ANTERIORES, franjasTurno } from './report.js';
+import { resumen, tiempos, filtrarResultado, ventanaDia, ventanaRango, diaSugerido, DEFAULT_TURNOS, TURNOS_ANTERIORES, franjasTurno } from './report.js';
 import { diagnosticar } from './diagnostico.js';
 import { norm, cleanText, dayFromIso, isoDay, uid } from './util.js';
 
@@ -224,7 +224,7 @@ export function sugerirDia(fuentes, config) {
 
 // Corre todo. dia: 'YYYY-MM-DD' o '' para no filtrar.
 // agentes: lista de agentes elegidos a mano; si viene, manda sobre la línea.
-export function ejecutar({ fuentes, config, manual, dia, linea, agentes: elegidos }) {
+export function ejecutar({ fuentes, config, manual, dia, diaHasta, linea, agentes: elegidos }) {
   const ds = dataset(fuentes, config);
   const { billetera, duplicadosDescartados } = ds;
   let { panel } = ds;
@@ -251,7 +251,9 @@ export function ejecutar({ fuentes, config, manual, dia, linea, agentes: elegido
     if (d) Object.assign(p, { motivo: d.motivo, motivoDetalle: d.detalle });
   }
   const dayMs = dayFromIso(dia);
-  const ventana = dayMs == null ? null : ventanaDia(dayMs, config.horaInicioDia);
+  // Con "hasta": varios días operativos juntos (de las 6 del primero a las 6 del día siguiente al último).
+  const hastaMs = dayFromIso(diaHasta);
+  const ventana = dayMs == null ? null : hastaMs != null && hastaMs !== dayMs ? ventanaRango(dayMs, hastaMs, config.horaInicioDia) : ventanaDia(dayMs, config.horaInicioDia);
   const vista = filtrarResultado(res, ventana);
   return {
     panel,
@@ -316,12 +318,13 @@ export function diccionarioDesdeTabla(rows, dicc) {
 }
 
 // Trabajo guardado (.conciliacion): fuentes ya parseadas + decisiones manuales.
-export function serializarTrabajo({ fuentes, manual, dia }) {
+export function serializarTrabajo({ fuentes, manual, dia, diaHasta = '' }) {
   return JSON.stringify({
     tipo: 'conciliador-fichas',
     version: 1,
     guardado: new Date().toISOString(),
     dia,
+    diaHasta,
     manual,
     fuentes: fuentes.map((f) => ({
       nombre: f.nombre,
@@ -341,5 +344,5 @@ export function deserializarTrabajo(text) {
     const rows = f.rows.map((r) => r.map((c) => (typeof c === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(c) ? new Date(c) : c)));
     return parseFuente({ ...f, rows, id: uid('f') });
   });
-  return { fuentes, manual: data.manual || { forzados: [], estados: {}, rechazados: [] }, dia: data.dia || '' };
+  return { fuentes, manual: data.manual || { forzados: [], estados: {}, rechazados: [] }, dia: data.dia || '', diaHasta: data.diaHasta || '' };
 }
