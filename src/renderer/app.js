@@ -67,6 +67,17 @@ const state = {
   sel: new Set(),
 };
 
+// Íconos del menú (trazo simple, color del texto).
+const ICONOS = {
+  cargar: '<path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>',
+  resumen: '<rect x="4" y="12" width="3.5" height="8" rx="1"/><rect x="10.25" y="7" width="3.5" height="13" rx="1"/><rect x="16.5" y="4" width="3.5" height="16" rx="1"/>',
+  conciliacion: '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>',
+  pendientes: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  tiempos: '<path d="M10 3h4M12 3v3"/><circle cx="12" cy="14" r="7"/><path d="M12 14l3-3"/>',
+  config: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+};
+const icono = (k) => `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONOS[k] || ''}</svg>`;
+
 const VIEWS = [
   { key: 'cargar', label: 'Cargar reportes' },
   { key: 'resumen', label: 'Resumen' },
@@ -212,7 +223,7 @@ function render() {
     const disabled = !run && ['resumen', 'conciliacion', 'pendientes', 'tiempos'].includes(v.key);
     const c = counts[v.key];
     return `<button data-view="${v.key}" class="${state.view === v.key ? 'active' : ''}" ${disabled ? 'disabled' : ''}>
-      <span>${v.label}</span>${c != null && run ? `<span class="count">${c}</span>` : ''}</button>`;
+      ${icono(v.key)}<span class="lbl">${v.label}</span>${c != null && run ? `<span class="count${v.key === 'pendientes' && c ? ' warn' : ''}">${c}</span>` : ''}</button>`;
   }).join('');
   $('#sidebar-foot').innerHTML = `Funciona sin conexión.<br>Datos: ${esc(state.dataDir)}`;
 
@@ -227,10 +238,11 @@ function render() {
       : '';
 
   $('#topbar-actions').innerHTML = `
-    ${run ? diaSelectorHtml() : ''}
+    ${run ? `<div class="filtro">${diaSelectorHtml()}</div>` : ''}
+    <div class="acciones">
     <button class="btn" data-act="abrir-trabajo">Abrir trabajo</button>
     <button class="btn" data-act="guardar-trabajo" ${state.fuentes.length ? '' : 'disabled'}>Guardar trabajo</button>
-    <button class="btn primary" data-act="exportar" ${run ? '' : 'disabled'}>Exportar a Excel</button>`;
+    <button class="btn primary" data-act="exportar" ${run ? '' : 'disabled'}>Exportar a Excel</button></div>`;
 
   // Conservar la posición de scroll al redibujar la misma vista (p. ej. al tildar un pendiente).
   const mismaVista = render.last === state.view;
@@ -958,9 +970,13 @@ function pendTable(list, lado, hints) {
         <td>${tipoTxt(r.tipo)}</td>
         <td>${esc(r.persona)}<div class="muted small">${esc(r.cuenta)} · ${esc(r.origen)}${r.sinHora && r.turno ? ` · ${esc(r.turno)}` : ''}${r.sinHora && r.detalle ? ` · <b>${esc(r.detalle)}</b>` : ''}</div></td>
         <td class="num">${money(signed(r))}</td>
-        <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}${p.motivo ? `<div class="small" title="${esc(p.motivoDetalle || '')}"><b>${esc(p.motivo)}</b><div class="muted">${esc(p.motivoDetalle || '')}</div></div>` : ''}
+        <td>${estadoBadge(p.estado)}${p.nota ? `<div class="muted small">${esc(p.nota)}</div>` : ''}
           ${man ? `<div><button class="link small" data-quitar-estado="${esc(r.id)}">Quitar marca</button></div>` : ''}</td>
-      </tr>`;
+      </tr>${
+        p.motivo
+          ? `<tr class="motivo ${sel ? 'sel' : hints.has(r.id) ? 'hint' : ''}" data-pend-row="${esc(r.id)}"><td></td><td colspan="5"><span class="motivo-tit">${esc(p.motivo)}</span>${p.motivoDetalle ? ` · <span class="muted">${esc(p.motivoDetalle)}</span>` : ''}</td></tr>`
+          : ''
+      }`;
     })
     .join('');
   return `<div class="scroll" style="max-height:calc(100vh - 290px)"><table class="tbl"><thead><tr><th></th><th>Hora</th><th>Op.</th><th>${lado === 'panel' ? 'Usuario / agente' : 'Titular / cuenta'}</th><th class="num">Monto</th><th>Estado</th></tr></thead>

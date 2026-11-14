@@ -671,3 +671,397 @@ table.tbl {
   margin: 0 4px 0 0;
   vertical-align: -2px;
 }
+
+/* ---------------------------------------------------------------------------
+   Diseño 2: más aire, jerarquía clara y colores de estado consistentes. */
+:root {
+  --bg: #f2f4f7;
+  --panel: #ffffff;
+  --ink: #101828;
+  --muted: #667085;
+  --line: #e4e7ec;
+  --brand: #1849a9;
+  --brand-2: #2563eb;
+  --brand-soft: #eef4ff;
+  --side: #0c1a2b;
+  --side-2: #12243a;
+  --side-ink: #a9b8cc;
+  --ok: #067647;
+  --ok-bg: #ecfdf3;
+  --warn: #b54708;
+  --warn-bg: #fffaeb;
+  --bad: #c01048;
+  --bad-bg: #fff1f3;
+  --info: #175cd3;
+  --info-bg: #eff8ff;
+  --neutral-bg: #f2f4f7;
+  --sel: #fef7c3;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+}
+
+/* Barra lateral */
+.sidebar {
+  width: 232px;
+  background: linear-gradient(180deg, var(--side) 0%, var(--side-2) 100%);
+}
+.brand {
+  padding: 20px 18px;
+}
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  letter-spacing: 0.5px;
+}
+.brand-name {
+  font-size: 15px;
+}
+nav {
+  padding: 12px 10px;
+}
+nav button {
+  gap: 10px;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  font-weight: 500;
+  position: relative;
+}
+nav button .lbl {
+  flex: 1;
+}
+nav button .ico {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  opacity: 0.85;
+}
+nav button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+nav button.active {
+  background: rgba(59, 130, 246, 0.16);
+  color: #fff;
+}
+nav button.active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #60a5fa;
+}
+nav .count {
+  background: rgba(255, 255, 255, 0.1);
+  color: #dbe5f1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+nav .count.warn {
+  background: #f79009;
+  color: #fff;
+}
+.sidebar-foot {
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+/* Barra superior */
+.topbar {
+  padding: 14px 28px;
+  box-shadow: 0 1px 0 var(--line);
+  border-bottom: 0;
+  align-items: center;
+}
+.topbar h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+#view-sub {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.topbar-right {
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.topbar-right .filtro {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f9fafb;
+}
+.topbar-right .filtro label.row {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.topbar-right .filtro label.row + label.row {
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+}
+.topbar-right .filtro select,
+.topbar-right .filtro input {
+  border-color: transparent;
+  background: transparent;
+  padding: 5px 6px;
+}
+.topbar-right .filtro select:hover,
+.topbar-right .filtro input:hover {
+  background: #fff;
+  border-color: var(--line);
+}
+.topbar-right .acciones {
+  display: flex;
+  gap: 8px;
+}
+
+/* Contenido */
+.view {
+  padding: 24px 28px 48px;
+}
+.card {
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.card h2 {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 14px;
+  color: var(--ink);
+}
+
+/* Botones y campos */
+button.btn,
+label.btn {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+button.btn.primary {
+  background: var(--brand-2);
+  border-color: var(--brand-2);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+}
+button.btn.primary:hover {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+button.btn.sm {
+  border-radius: 6px;
+}
+input,
+select,
+textarea {
+  border-radius: 8px;
+  border-color: #d0d5dd;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  border-color: var(--brand-2);
+}
+
+/* Zona para soltar archivos */
+.dropzone {
+  border: 1.5px dashed #b2c1d6;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fbfcff, #f5f8ff);
+  padding: 30px;
+}
+.dropzone .big {
+  color: var(--brand);
+}
+
+/* Tablas */
+.tbl th {
+  background: #f9fafb;
+  color: #475467;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 10px 10px;
+}
+.tbl td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #f2f4f7;
+}
+.tbl tr:hover td {
+  background: #f8faff;
+}
+.scroll {
+  border-radius: 10px;
+}
+
+/* Etiquetas de estado: con un punto de color */
+.badge {
+  border-radius: 999px;
+  padding: 2px 9px 2px 8px;
+  font-weight: 500;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+.badge::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 6px;
+  vertical-align: 1px;
+  opacity: 0.85;
+}
+.badge.ok {
+  border-color: #abefc6;
+}
+.badge.warn {
+  border-color: #fedf89;
+}
+.badge.bad {
+  border-color: #fecdd6;
+}
+.badge.info {
+  border-color: #b2ddff;
+}
+.agentes-sel label.badge::before {
+  display: none;
+}
+
+/* Indicadores */
+.kpis {
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.kpi {
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  height: 3px;
+  background: #d0d5dd;
+}
+.kpi:first-child::after {
+  background: var(--brand-2);
+}
+.kpi.good::after {
+  background: #17b26a;
+}
+.kpi.bad::after {
+  background: #f04438;
+}
+.kpi .lbl {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.kpi .val {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  margin-top: 6px;
+}
+.kpi:first-child .val {
+  color: var(--brand);
+}
+.progress {
+  height: 6px;
+  border-radius: 999px;
+}
+.progress > div {
+  border-radius: 999px;
+}
+
+/* Avisos */
+.notice {
+  border-radius: 10px;
+}
+
+/* Pestañas y avisos emergentes */
+.tabs button.active {
+  color: var(--brand-2);
+  border-bottom-color: var(--brand-2);
+}
+.toast {
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.kpis {
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+}
+.kpi {
+  padding: 15px 16px;
+}
+.kpi .lbl {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+}
+.kpi .val {
+  font-size: clamp(18px, 1.55vw, 24px);
+  white-space: nowrap;
+}
+/* Motivo probable de un pendiente: renglón propio debajo del movimiento. */
+.tbl tr.motivo td {
+  padding-top: 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tbl tr:has(+ tr.motivo) td {
+  border-bottom: 0;
+}
+.tbl tr.motivo .motivo-tit {
+  font-weight: 600;
+  color: #344054;
+}
+.tbl tr.motivo .motivo-tit::before {
+  content: '↳ ';
+  color: var(--muted);
+}
+/* Etiquetas en tablas angostas: pueden ocupar dos renglones, con esquinas menos redondas. */
+.tbl .badge {
+  white-space: normal;
+  border-radius: 8px;
+  line-height: 1.35;
+  padding: 2px 8px;
+}
+.tbl th {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+}
+.tbl td,
+.tbl th {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.badge::before {
+  display: none;
+}
